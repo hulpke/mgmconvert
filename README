@@ -1,0 +1,28 @@
+Magma -> GAP converter.
+
+(C) 2015-16 by Alexander Hulpke (hulpke@math.colostate.edu)
+
+Permission is given to use this code as open source for purposes of
+helping with the translation of Magma code to GAP, but not for translation
+into other languages.
+
+
+Commands:
+
+MagmaConvert(magmafile[,gapfile]) 
+
+translates a magma file into GAP-style code. the resulting code will need
+manual reworking. If no gapfile is given output is to Stdout.. If no gapfile
+is given output is to Stdout.
+
+
+
+Project(directory,packagename))
+
+assumes that directory is a folder that has a subfolder `magma' (containig
+the magma code) and `translate' (for output). All files in the source folder
+are read in , output is written the translate folder. Functions are assumed
+to be local to the package (using the packagename identifier addition) and
+function calls of package functions are modified accordingly.
+The function returns a list that for each file gives all its dependency
+files within the package.
