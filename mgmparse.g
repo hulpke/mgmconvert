@@ -60,7 +60,19 @@ TRANSLATE:=[
 "IsOdd","IsOddInt",
 "Matrix","MatrixByEntries",
 "Dimension","DimensionOfMatrixGroup",
+"Modexp","PowerMod",
 ];
+
+# reserved GAP variables that cannot be used as identifierso
+GAP_KEYWORDS:=[
+"break", "continue", "do", "elif", "else", "end", "fi", "for",
+"function", "if", "in", "local", "mod", "not", "od", "or", "readonly",
+"readwrite", "rec", "repeat", "return", "then",  "until", "while",
+"quit", "QUIT", "IsBound", "Unbind", "TryNextMethod", "Info", "Assert",
+];
+
+# add those which are global functions
+GAP_RESERVED:=Union(GAP_KEYWORDS,[ "E","X","Z"]);
 
 # parses to the following units:
 
@@ -1429,10 +1441,6 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 
 end;
 
-
-NOPARTYPE:=["N","S","C","U-","Bdiv", # translates to QuoInt
-	    "I","sub","paren"];
-
 GAPOutput:=function(l,f)
 local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
 
@@ -1456,6 +1464,8 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
      # TODO: use name space
      if s in l.namespace then
        s:=Concatenation(s,"@");
+     elif s in GAP_RESERVED then
+       s:=Concatenation("var",s);
      fi;
      return s;
    end;
@@ -1476,7 +1486,7 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
 	if Length(arg)>1 then
 	  FilePrint(f,"\"",i,"\"");
 	else
-	  FilePrint(f,i);
+	  FilePrint(f,traid(i));
 	fi;
       fi;
     od;
@@ -2053,7 +2063,7 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
       FilePrint(f,");\n",START);
 
     elif t="require" then
-      FilePrint(f,START,"if not ");
+      FilePrint(f,START,"\b\bif not ");
       doit(node.cond);
       indent(1);
       FilePrint(f," then\n",START,"Error(");
