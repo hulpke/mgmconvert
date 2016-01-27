@@ -55,6 +55,7 @@ TRANSLATE:=[
 "NumberOfRows","Length",
 "DiagonalMatrix","DiagonalMat",
 "Determinant","DeterminantMat",
+"Nullspace","NullspaceMat",
 "Transpose","TransposedMat",
 "GCD","Gcd",
 "DiagonalJoin","DirectSumMat",
