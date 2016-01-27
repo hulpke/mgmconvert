@@ -1,7 +1,28 @@
 # Library of utility functions to aid in Magma code translation
 
+# generic subgroup generator, use in place of `SubStructure' if it is
+# groups. Should be improved to use more `closure'.
+SubgroupContaining:=function(arg)
+local P,gens,i;
+  P:=arg[1];
+  gens:=[];
+  for i in [2..Length(arg)] do
+    if IsGroup(arg[i]) then
+      Append(gens,GeneratorsOfGroup(arg[i]));
+    elif IsIdenticalObj(FamilyObj(arg[i]),FamilyObj(One(P))) then
+      Add(gens,arg[i]);
+    elif IsList(arg[i]) then
+      Append(gens,arg[i]);
+    else
+      Error("don't know what to do with object");
+    fi;
+  od;
+  return SubgroupNC(P,gens);
+end;
+
 # hom is homomorphism defined on fp group
 # l is words given by numbers 
+DeclareGlobalFunction("WordlistSubgroup");
 InstallGlobalFunction(WordlistSubgroup,function(G,l,hom,arg)
 local fp,fam;
   fp:=Source(hom);
