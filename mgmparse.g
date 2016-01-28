@@ -1,5 +1,5 @@
 # Magma to GAP converter
-MGMCONVER:="version 0.38, 1/12/16"; # basic version
+MGMCONVER:="version 0.39, 1/28/16"; # basic version
 # (C) Alexander Hulpke
 
 
@@ -68,6 +68,8 @@ TRANSLATE:=[
 "Quotrem","QuotientRemainder",
 "Divisors","DivisorsInt",
 "Reverse","Reversed",
+"Sym","SymmetricGroup",
+"Alt","AlternatingGroup",
 ];
 
 # reserved GAP variables that cannot be used as identifierso
@@ -1484,7 +1486,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 end;
 
 GAPOutput:=function(l,f)
-local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
+local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unravel;
 
    # process translation list
    tralala:=[[],[]];
@@ -1530,6 +1532,23 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
 	else
 	  FilePrint(f,traid(i));
 	fi;
+      fi;
+    od;
+  end;
+
+  # unravel recursive cals from translation of infix to function calls
+  unravel:=function(l,type)
+  local i,j;
+    i:=1;
+    while i<=Length(l) do
+      if l[i].type=type then
+	for j in [Length(l),Length(l)-1..i+1] do
+	  l[j+1]:=l[j];
+	od;
+	l[i+1]:=l[i].right;
+	l[i]:=l[i].left;
+      else
+	i:=i+1;
       fi;
     od;
   end;
@@ -1814,11 +1833,17 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
       FilePrint(f,",");
       doit(node.right);
       FilePrint(f,")");
-    elif t="Bcat" then
-      FilePrint(f,"Concatenation(");
-      doit(node.left);
-      FilePrint(f,",");
-      doit(node.right);
+    elif t="Bcat" or t="Bmeet" or t="Bjoin" then
+      if t="Bcat" then
+	FilePrint(f,"Concatenation(");
+      elif t="Bmeet" then
+	FilePrint(f,"Intersection(");
+      elif t="Bjoin" then
+	FilePrint(f,"Union(");
+      fi;
+      i:=[node.left,node.right];
+      unravel(i,t);
+      printlist(i);
       FilePrint(f,")");
     elif t[1]='B' then
       # binary op
@@ -1826,13 +1851,13 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
       a:=i;
       if a in FAKEBIN then
 	b:=false;
-	if a="meet" then
-	  a:="Intersection";
-	elif a="join" then
-	  a:="Union";
-	elif a="cat" then
-	  a:="Concatenation";
-	elif a="diff" then
+	#if a="meet" then
+	#  a:="Intersection";
+	#elif a="join" then
+	#  a:="Union";
+	#elif a="cat" then
+	#  a:="Concatenation";
+	if a="diff" then
 	  a:="Difference";
 	elif a="subset" then
 	  a:="IsSubset";
