@@ -361,6 +361,8 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	eatblank();
 	i:=Position(TOKENS,a);
         Add(tok,["O",TOKENS[i]]);
+      elif a="is" then
+        Add(tok,["O",":="]);
       else
         Add(tok,["K",TOKENS[i]]);
       fi;
