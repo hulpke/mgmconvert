@@ -70,6 +70,7 @@ TRANSLATE:=[
 "Reverse","Reversed",
 "Sym","SymmetricGroup",
 "Alt","AlternatingGroup",
+"Id","One",
 ];
 
 # reserved GAP variables that cannot be used as identifierso
@@ -1494,6 +1495,10 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unravel;
      Add(tralala[1],Immutable(TRANSLATE[i]));
      Add(tralala[2],Immutable(TRANSLATE[i+1]));
    od;
+   if ValueOption("carefree")=true then
+     Add(tralala[1],Immutable("Append"));
+     Add(tralala[2],Immutable("Add"));
+   fi;
    SortParallel(tralala[1],tralala[2]);
 
    START:="";
@@ -1593,15 +1598,16 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unravel;
 	FilePrint(f,"InstallGlobalFunction(");
 	doit(node.left);
 	FilePrint(f,",\n",START);
-	doit(node.right);
+	doit(node.right:ininstall);
 	FilePrint(f,")");
+	FilePrint(f,";\n\n",START);
       else
 	doit(node.left);
 	FilePrint(f,":=");
 	doit(node.right);
+	FilePrint(f,";\n",START);
       fi;
 
-      FilePrint(f,";\n",START);
       if IsBound(node.implicitassg) then
 	FilePrint(f,"# Implicit generator Assg from previous line.\n",START);
 	for i in [1..Length(node.implicitassg)] do
@@ -1726,9 +1732,13 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unravel;
       for i in node.block do
 	doit(i);
       od;
-      FilePrint(f,"\n");
+      #FilePrint(f,"\n");
       indent(-1);
-      FilePrint(f,START,"end;\n",START);
+      FilePrint(f,"\b\b");
+      FilePrint(f,"end");
+      if ValueOption("ininstall")=fail then
+	FilePrint(f,";\n",START);
+      fi;
     elif t="S" then
       FilePrint(f,"\"");
       FilePrint(f,node.name);
@@ -1820,9 +1830,15 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unravel;
       FilePrint(f,")");
     elif t="B!" then
       doit(node.right);
-      FilePrint(f,"*FORCEOne(");
-      doit(node.left);
-      FilePrint(f,")");
+      if ValueOption("carefree")<>true then
+	FilePrint(f,"*FORCEOne(");
+	doit(node.left);
+	FilePrint(f,")");
+      else
+	FilePrint(f," #CAST ");
+	doit(node.left);
+	FilePrint(f,"\n",START,"  ");
+      fi;
     elif t="B`" then
       doit(node.left);
       FilePrint(f,".");
@@ -1931,7 +1947,9 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unravel;
       FilePrint(f,"-");
       doit(node.arg);
     elif t="U~" then
-      FilePrint(f,"TILDE");
+      if ValueOption("carefree")<>true then
+	FilePrint(f,"TILDE");
+      fi;
       doit(node.arg);
     elif t="Unot" then
       FilePrint(f,"not ");
