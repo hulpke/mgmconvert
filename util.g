@@ -20,6 +20,11 @@ local P,gens,i;
   return SubgroupNC(P,gens);
 end;
 
+DeclareGlobalFunction("Submatrix");
+InstallGlobalFunction(Submatrix,function(m,a,b,c,d)
+  return m{[a..c]}{[b..d]};
+end);
+
 # hom is homomorphism defined on fp group
 # l is words given by numbers 
 DeclareGlobalFunction("WordlistSubgroup");
