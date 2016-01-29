@@ -875,7 +875,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	      ReadExpression(["]"]);
 	      ExpectToken("]");
 	    elif tok[tnum][2]="{" then
-	      # list type?
+	      # set type?
 	      ExpectToken("{");
 	      ReadExpression(["}"]);
 	      ExpectToken("}");
