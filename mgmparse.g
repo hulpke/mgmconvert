@@ -1,5 +1,5 @@
 # Magma to GAP converter
-MGMCONVER:="version 0.37, 12/20/15"; # basic version
+MGMCONVER:="version 0.39, 1/28/16"; # basic version
 # (C) Alexander Hulpke
 
 
@@ -12,7 +12,9 @@ TOKENS:=["if","then","eq","cmpeq","neq","and","or","else","not","assigned",
          "function","return",":=","+:=","-:=","*:=","/:=","cat:=","=",
 	 "\\[","\\]","delete","exists",
 	 "[","]","(",")","\\(","\\)","`",";","#","!","<",">","&","$",":->","hom","map",
-	 "cat","[*","*]","->","@@","forward","join",
+	 "cat","[*","*]","{@","@}",
+	 "continue",
+	 "->","@@","forward","join",
 	 "+","-","*","/","div","mod","in","notin","^","~","..",".",",","\"",
 	 "{","}","|","::",":","@","cmpne","subset","by","try","end try","catch err",
 	 "declare verbose","declare attributes","error if",
@@ -53,6 +55,7 @@ TRANSLATE:=[
 "NumberOfRows","Length",
 "DiagonalMatrix","DiagonalMat",
 "Determinant","DeterminantMat",
+"Nullspace","NullspaceMat",
 "Transpose","TransposedMat",
 "GCD","Gcd",
 "DiagonalJoin","DirectSumMat",
@@ -60,7 +63,26 @@ TRANSLATE:=[
 "IsOdd","IsOddInt",
 "Matrix","MatrixByEntries",
 "Dimension","DimensionOfMatrixGroup",
+"Modexp","PowerMod",
+"Include","UniteSet",
+"Quotrem","QuotientRemainder",
+"Divisors","DivisorsInt",
+"Reverse","Reversed",
+"Sym","SymmetricGroup",
+"Alt","AlternatingGroup",
+"Id","One",
 ];
+
+# reserved GAP variables that cannot be used as identifierso
+GAP_KEYWORDS:=[
+"break", "continue", "do", "elif", "else", "end", "fi", "for",
+"function", "if", "in", "local", "mod", "not", "od", "or", "readonly",
+"readwrite", "rec", "repeat", "return", "then",  "until", "while",
+"quit", "QUIT", "IsBound", "Unbind", "TryNextMethod", "Info", "Assert",
+];
+
+# add those which are global functions
+GAP_RESERVED:=Union(GAP_KEYWORDS,[ "E","X","Z"]);
 
 # parses to the following units:
 
@@ -192,7 +214,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
     Print("\n");
     Print(tok{[Maximum(1,tnum-a)..tnum-1]},"\n------\n",tok{[tnum..tnum+a]},"\n");
     l:=0;
-    for i in [tnum+a+1..tnum+50] do
+    for i in [tnum+a+1..Minimum(Length(tok),tnum+50)] do
       s:=tok[i][2];
       if not IsString(s) then
 	s:=String(s);
@@ -339,6 +361,8 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	eatblank();
 	i:=Position(TOKENS,a);
         Add(tok,["O",TOKENS[i]]);
+      elif a="is" then
+        Add(tok,["O",":="]);
       else
         Add(tok,["K",TOKENS[i]]);
       fi;
@@ -430,7 +454,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
     end;
 
     doprocidf:=function()
-    local a,l,e,b,c,d,eset;
+    local a,l,e,b,c,d,eset,open,close,ltype;
 
       eset:=function()
 	while tok[tnum][1]="#" do
@@ -484,17 +508,34 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	fi;
 	ExpectToken(")");
         return rec(type:="paren",arg:=a);
-      elif e="[" then
-	ExpectToken("[");
+      elif e in ["[","{","[*","{@"] then
+	# list tokens
+	open:=e;
+	if e="[" then
+	  close:="]";
+	  ltype:="V";
+	elif e="{" then
+	  close:="}";
+	  ltype:="{";
+	elif e="[*" then
+	  close:="*]";
+	  ltype:="[*";
+	elif e="{@" then
+	  close:="@}";
+	  ltype:="{@";
+	else
+	  Error("other list type?");
+	fi;
+	ExpectToken(open);
 	l:=[];
 	b:=fail;
-	if tok[tnum][2]="]" then
+	if tok[tnum][2]=close then
 	  #empty list
 	  tnum:=tnum;
 	else
 	  repeat 
 	    #tnum:=tnum+1;
-	    a:=ReadExpression(["]",",",":","..","|"]);
+	    a:=ReadExpression([close,",",":","..","|"]);
 	    if tok[tnum][2]="|" then
 	      ExpectToken("|");
 	      b:=a;
@@ -510,27 +551,27 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	      tnum:=tnum+1;
 	      ExpectToken("in");
 
-	      e:=ReadExpression(["]","|"]); #part 2
+	      e:=ReadExpression([close,"|"]); #part 2
 	      if tok[tnum][2]="|" then
 		ExpectToken("|");
 		a:=rec(type:=":F",op:=l,var:=a,from:=e);
-		a.test:=ReadExpression(["]"]);
-		ExpectToken("]");
+		a.test:=ReadExpression([close]);
+		ExpectToken(close);
 	      else
-		ExpectToken("]");
-		a:=rec(type:=":",op:=l,var:=a,from:=e);
+		ExpectToken(close);
+		a:=rec(type:=":",op:=l,var:=a,from:=e,open:=open);
 	      fi;
 	      return a;
 	    elif tok[tnum][2]=".." then
 	      ExpectToken("..");
-	      e:=ReadExpression(["]","by"]); #part 2
+	      e:=ReadExpression([close,"by"]); #part 2
 	      if tok[tnum][2]="by" then
 		ExpectToken("by");
-		a:=rec(type:="R",from:=a,to:=e,step:=ReadExpression(["]"]));
+		a:=rec(type:="R",from:=a,to:=e,step:=ReadExpression([close]));
 	      else
 		a:=rec(type:="R",from:=a,to:=e);
 	      fi;
-	      ExpectToken("]");
+	      ExpectToken(close);
 	      return a;
 	    elif tok[tnum][2]="," then
 	      ExpectToken(",");
@@ -538,11 +579,11 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	    if a<>fail then
 	      Add(l,a);
 	    fi;
-	  until tok[tnum][2]="]";
+	  until tok[tnum][2]=close;
 
 	fi;
-	ExpectToken("]");
-        a:=rec(type:="V",args:=l);
+	ExpectToken(close);
+        a:=rec(type:=ltype,args:=l);
 	if b<>fail then
 	  a.force:=b;
 	fi;
@@ -575,48 +616,63 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  fi;
 	fi;
 
-      elif e="[*" then
-	l:=[];
-	if tok[tnum+1][2]="*]" then
-	  #empty list
-	  tnum:=tnum+1;
-	else
-	  repeat 
-	    tnum:=tnum+1;
-	    a:=ReadExpression(["*]",","]);
-	    Add(l,a);
-	  until tok[tnum][2]="*]";
-	fi;
-	ExpectToken("*]");
-	a:=rec(type:="[*",args:=l);
-
-      elif e="{" then
-	ExpectToken("{");
-	l:=[];
-	b:=false;
-	if tok[tnum][2]="}" then
-	  #empty list
-	  tnum:=tnum;
-	else
-	  repeat 
-	    a:=ReadExpression(["}",",",".."]);
-	    if tok[tnum][2]=".." then
-	      ExpectToken("..");
-	      b:=true;
-	      Add(l,a);
-	      a:=ReadExpression(["}"]);
-	    elif tok[tnum][2]="," then
-	      ExpectToken(",");
-	    fi;
-	    Add(l,a);
-	  until tok[tnum][2]="}";
-	fi;
-	ExpectToken("}");
-	if b=true then
-	  a:=rec(type:="R",from:=l[1],to:=l[2]);
-	else
-	  a:=rec(type:="{",args:=l);
-	fi;
+#      elif e="[*" then
+#	l:=[];
+#	if tok[tnum+1][2]="*]" then
+#	  #empty list
+#	  tnum:=tnum+1;
+#	else
+#	  repeat 
+#	    tnum:=tnum+1;
+#	    a:=ReadExpression(["*]",","]);
+#	    Add(l,a);
+#	  until tok[tnum][2]="*]";
+#	fi;
+#	ExpectToken("*]");
+#	a:=rec(type:="[*",args:=l);
+#
+#      elif e="{@" then
+#	l:=[];
+#	if tok[tnum+1][2]="@}" then
+#	  #empty list
+#	  tnum:=tnum+1;
+#	else
+#	  repeat 
+#	    tnum:=tnum+1;
+#	    a:=ReadExpression(["@}",","]);
+#	    Add(l,a);
+#	  until tok[tnum][2]="@}";
+#	fi;
+#	ExpectToken("@}");
+#	a:=rec(type:="{@",args:=l);
+#
+#      elif e="{" then
+#	ExpectToken("{");
+#	l:=[];
+#	b:=false;
+#	if tok[tnum][2]="}" then
+#	  #empty list
+#	  tnum:=tnum;
+#	else
+#	  repeat 
+#	    a:=ReadExpression(["}",",",".."]);
+#	    if tok[tnum][2]=".." then
+#	      ExpectToken("..");
+#	      b:=true;
+#	      Add(l,a);
+#	      a:=ReadExpression(["}"]);
+#	    elif tok[tnum][2]="," then
+#	      ExpectToken(",");
+#	    fi;
+#	    Add(l,a);
+#	  until tok[tnum][2]="}";
+#	fi;
+#	ExpectToken("}");
+#	if b=true then
+#	  a:=rec(type:="R",from:=l[1],to:=l[2]);
+#	else
+#  a:=rec(type:="{",args:=l);
+#fi;
 
       elif e="sub" then
 	# substructure
@@ -1198,6 +1254,9 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 
 	  Add(l,rec(type:=kind,class:=a,values:=c));
 
+        elif e[2]="continue" then
+	  ExpectToken(";",-8);
+	  Add(l,rec(type:="continue"));
 	elif e[2]="freeze" then
 	  ExpectToken(";",8);
 	elif e[2]="import" then
@@ -1429,12 +1488,8 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 
 end;
 
-
-NOPARTYPE:=["N","S","C","U-","Bdiv", # translates to QuoInt
-	    "I","sub","paren"];
-
 GAPOutput:=function(l,f)
-local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
+local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unravel;
 
    # process translation list
    tralala:=[[],[]];
@@ -1442,6 +1497,10 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
      Add(tralala[1],Immutable(TRANSLATE[i]));
      Add(tralala[2],Immutable(TRANSLATE[i+1]));
    od;
+   if ValueOption("carefree")=true then
+     Add(tralala[1],Immutable("Append"));
+     Add(tralala[2],Immutable("Add"));
+   fi;
    SortParallel(tralala[1],tralala[2]);
 
    START:="";
@@ -1456,6 +1515,8 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
      # TODO: use name space
      if s in l.namespace then
        s:=Concatenation(s,"@");
+     elif s in GAP_RESERVED then
+       s:=Concatenation("var",s);
      fi;
      return s;
    end;
@@ -1476,8 +1537,25 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
 	if Length(arg)>1 then
 	  FilePrint(f,"\"",i,"\"");
 	else
-	  FilePrint(f,i);
+	  FilePrint(f,traid(i));
 	fi;
+      fi;
+    od;
+  end;
+
+  # unravel recursive cals from translation of infix to function calls
+  unravel:=function(l,type)
+  local i,j;
+    i:=1;
+    while i<=Length(l) do
+      if l[i].type=type then
+	for j in [Length(l),Length(l)-1..i+1] do
+	  l[j+1]:=l[j];
+	od;
+	l[i+1]:=l[i].right;
+	l[i]:=l[i].left;
+      else
+	i:=i+1;
       fi;
     od;
   end;
@@ -1522,15 +1600,16 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
 	FilePrint(f,"InstallGlobalFunction(");
 	doit(node.left);
 	FilePrint(f,",\n",START);
-	doit(node.right);
+	doit(node.right:ininstall);
 	FilePrint(f,")");
+	FilePrint(f,";\n\n",START);
       else
 	doit(node.left);
 	FilePrint(f,":=");
 	doit(node.right);
+	FilePrint(f,";\n",START);
       fi;
 
-      FilePrint(f,";\n",START);
       if IsBound(node.implicitassg) then
 	FilePrint(f,"# Implicit generator Assg from previous line.\n",START);
 	for i in [1..Length(node.implicitassg)] do
@@ -1655,9 +1734,13 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
       for i in node.block do
 	doit(i);
       od;
-      FilePrint(f,"\n");
+      #FilePrint(f,"\n");
       indent(-1);
-      FilePrint(f,START,"end;\n",START);
+      FilePrint(f,"\b\b");
+      FilePrint(f,"end");
+      if ValueOption("ininstall")=fail then
+	FilePrint(f,";\n",START);
+      fi;
     elif t="S" then
       FilePrint(f,"\"");
       FilePrint(f,node.name);
@@ -1721,6 +1804,10 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
       FilePrint(f,"# [*-list:\n",START,"[");
       printlist(node.args);
       FilePrint(f,"]");
+    elif t="{@" then
+      FilePrint(f,"# {@-list:\n",START,"[");
+      printlist(node.args);
+      FilePrint(f,"]");
     elif t="R" then
       FilePrint(f,"[");
       doit(node.from);
@@ -1745,9 +1832,15 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
       FilePrint(f,")");
     elif t="B!" then
       doit(node.right);
-      FilePrint(f,"*FORCEOne(");
-      doit(node.left);
-      FilePrint(f,")");
+      if ValueOption("carefree")<>true then
+	FilePrint(f,"*FORCEOne(");
+	doit(node.left);
+	FilePrint(f,")");
+      else
+	FilePrint(f," #CAST ");
+	doit(node.left);
+	FilePrint(f,"\n",START,"  ");
+      fi;
     elif t="B`" then
       doit(node.left);
       FilePrint(f,".");
@@ -1758,11 +1851,17 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
       FilePrint(f,",");
       doit(node.right);
       FilePrint(f,")");
-    elif t="Bcat" then
-      FilePrint(f,"Concatenation(");
-      doit(node.left);
-      FilePrint(f,",");
-      doit(node.right);
+    elif t="Bcat" or t="Bmeet" or t="Bjoin" then
+      if t="Bcat" then
+	FilePrint(f,"Concatenation(");
+      elif t="Bmeet" then
+	FilePrint(f,"Intersection(");
+      elif t="Bjoin" then
+	FilePrint(f,"Union(");
+      fi;
+      i:=[node.left,node.right];
+      unravel(i,t);
+      printlist(i);
       FilePrint(f,")");
     elif t[1]='B' then
       # binary op
@@ -1770,13 +1869,13 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
       a:=i;
       if a in FAKEBIN then
 	b:=false;
-	if a="meet" then
-	  a:="Intersection";
-	elif a="join" then
-	  a:="Union";
-	elif a="cat" then
-	  a:="Concatenation";
-	elif a="diff" then
+	#if a="meet" then
+	#  a:="Intersection";
+	#elif a="join" then
+	#  a:="Union";
+	#elif a="cat" then
+	#  a:="Concatenation";
+	if a="diff" then
 	  a:="Difference";
 	elif a="subset" then
 	  a:="IsSubset";
@@ -1850,7 +1949,9 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
       FilePrint(f,"-");
       doit(node.arg);
     elif t="U~" then
-      FilePrint(f,"TILDE");
+      if ValueOption("carefree")<>true then
+	FilePrint(f,"TILDE");
+      fi;
       doit(node.arg);
     elif t="Unot" then
       FilePrint(f,"not ");
@@ -1886,6 +1987,10 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
     elif t=":" then
       # ordinary List construct
       FilePrint(f,"List(");
+      if node.open<>"[" then
+	FilePrint(f," # ",node.open,"-list:\n",START,"  ");
+      fi;
+
       doit(node.from);
       FilePrint(f,",",node.var,"->");
       doit(node.op);
@@ -2053,7 +2158,7 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
       FilePrint(f,");\n",START);
 
     elif t="require" then
-      FilePrint(f,START,"if not ");
+      FilePrint(f,START,"\b\bif not ");
       doit(node.cond);
       indent(1);
       FilePrint(f," then\n",START,"Error(");
@@ -2144,8 +2249,10 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala;
 	doit(node.var);
       fi;
       FilePrint(f,";\n",START);
+    elif t="continue" then
+      FilePrint(f,"continue;\n",START);
     elif t="none" then
-      Error("UUU");
+      #Error("UUU");
       FilePrint(f,"#NOP\n",START);
     else
       Error("NEED TO DO  type ",t," ");
