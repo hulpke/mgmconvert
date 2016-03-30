@@ -54,26 +54,31 @@ TOKENS:=Union(TOKENS,PAROP);
 
 # translation list for global function names
 TRANSLATE:=[
-"Nrows","Length",
-"NumberOfRows","Length",
-"DiagonalMatrix","DiagonalMat",
+"Alt","AlternatingGroup",
 "Determinant","DeterminantMat",
-"Nullspace","NullspaceMat",
-"Transpose","TransposedMat",
-"GCD","Gcd",
 "DiagonalJoin","DirectSumMat",
+"DiagonalMatrix","DiagonalMat",
+"Dimension","DimensionOfMatrixGroup",
+"Divisors","DivisorsInt",
+"GCD","Gcd",
+"Id","One",
+"Include","UniteSet",
+"IsConsistent","SolutionMat",
 "IsEven","IsEvenInt",
 "IsOdd","IsOddInt",
+"IsPrime","IsPrimeInt",
 "Matrix","MatrixByEntries",
-"Dimension","DimensionOfMatrixGroup",
 "Modexp","PowerMod",
-"Include","UniteSet",
+"Nrows","Length",
+"Nullspace","NullspaceMat",
+"NumberOfRows","Length",
 "Quotrem","QuotientRemainder",
-"Divisors","DivisorsInt",
 "Reverse","Reversed",
+"Roots","RootsOfUPol",
+"ScalarMatrix","ScalarMat",
+"Solution","SolutionMat",
 "Sym","SymmetricGroup",
-"Alt","AlternatingGroup",
-"Id","One",
+"Transpose","TransposedMat",
 ];
 
 # reserved GAP variables that cannot be used as identifierso
@@ -1700,7 +1705,7 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
 	  doit(node.implicitassg[i]);
 	  FilePrint(f,":=");
 	  doit(node.left);
-	  FilePrint(f,".",i,"\n",START);
+	  FilePrint(f,".",i,";\n",START);
 	od;
       fi;
     elif t[1]='A' and Length(t)=2 and t[2] in "+-*/" then
