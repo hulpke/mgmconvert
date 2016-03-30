@@ -1965,17 +1965,31 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unravel;
       doit(node.arg);
 
     elif t="<>" then
-      FilePrint(f,"Sub");
-      doit(node.op);
-      FilePrint(f,"(");
-      if Length(node.left)=1 then
-        doit(node.left[1]);
-      else
+      if node.op.type="I" and node.op.name="func" then
+	FilePrint(f,"function(");
 	printlist(node.left);
+	indent(1);
+	FilePrint(f,")\n");
+	FilePrint(f,START,"return ");
+	if Length(node.right)>1 then
+	  Error("multiargument?");
+	fi;
+	doit(node.right[1]);
+	indent(-1);
+	FilePrint(f,";\n",START,"end");
+      else
+	FilePrint(f,"Sub");
+	doit(node.op);
+	FilePrint(f,"(");
+	if Length(node.left)=1 then
+	  doit(node.left[1]);
+	else
+	  printlist(node.left);
+	fi;
+	FilePrint(f,",[");
+	printlist(node.right);
+	FilePrint(f,"])");
       fi;
-      FilePrint(f,",[");
-      printlist(node.right);
-      FilePrint(f,"])");
     elif t="<" then
       # seems to be not span, but just another variant of list
       FilePrint(f,"[");
