@@ -2,6 +2,9 @@
 MGMCONVER:="version 0.39, 1/28/16"; # basic version
 # (C) Alexander Hulpke
 
+LINEWIDTH:=80;
+COMMENTWIDTH:=LINEWIDTH-3;
+
 
 TOKENS:=["if","then","eq","cmpeq","neq","and","or","else","not","assigned",
          "while","ne","repeat","until","error","do","assert",
@@ -134,14 +137,18 @@ FILEPRINTSTR:="";
 START:="";
 
 FilePrint:=function(arg)
-  local f,i,p,a;
+  local f,i,p,a,new;
   f:=arg[1];
   for i in [2..Length(arg)] do
     if not IsString(arg[i]) then
-      FILEPRINTSTR:=Concatenation(FILEPRINTSTR,String(arg[i]));
+      new:=String(arg[i]);
+      if ValueOption("noblank")=true then
+        new:=Filtered(new,x->x<>' ');
+      fi;
     else
-      FILEPRINTSTR:=Concatenation(FILEPRINTSTR,arg[i]);
+      new:=arg[i];
     fi;
+    FILEPRINTSTR:=Concatenation(FILEPRINTSTR,new);
     p:=Position(FILEPRINTSTR,'\b');
     while p<>fail do
       FILEPRINTSTR:=Concatenation(FILEPRINTSTR{[1..p-2]},FILEPRINTSTR{[p+1..Length(FILEPRINTSTR)]});
@@ -149,16 +156,16 @@ FilePrint:=function(arg)
     od;
     p:=Position(FILEPRINTSTR,'\n');
     while p<>fail do
-      if p>76 then
+      if p>LINEWIDTH then
 	# try to find better break point
 	a:=p;
-	p:=76;
+	p:=LINEWIDTH;
 	while p>0 and not FILEPRINTSTR[p] in "]) " do
 	  p:=p-1;
 	od;
 	if p=0 or ForAll([1..p],x->FILEPRINTSTR[x]=' ') then
 	  p:=a;
-	  p:=76;
+	  p:=LINEWIDTH;
 	  while p>0 and not FILEPRINTSTR[p] in "," do
 	    p:=p-1;
 	  od;
@@ -293,13 +300,27 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
   end;
 
   ExpectToken:=function(arg)
-  local s,o,i;
+  local s,o,i,a;
     s:=arg[1];
     if Length(arg)>1 then 
       o:=arg[2];
     else
       o:="";
     fi;
+    # deal with infix comments before token
+    i:=tnum;
+    while tok[i][1]="#" do
+      i:=i+1;
+    od;
+    if s<>"#" and i>tnum then
+      a:=tok[i];
+      while i>tnum do
+	tok[i]:=tok[i-1];
+        i:=i-1;
+      od;
+      tok[tnum]:=a;
+    fi;
+
     if tok[tnum][2]<>s then
       i:=tnum;
       while tok[i][1]="#" do
@@ -931,7 +952,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	      ReadExpression(["]"]);
 	      ExpectToken("]");
 	    elif tok[tnum][2]="{" then
-	      # list type?
+	      # set type?
 	      ExpectToken("{");
 	      ReadExpression(["}"]);
 	      ExpectToken("}");
@@ -1382,7 +1403,9 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  repeat
 	    e:=ReadExpression([",",">"]);
 	    Add(c,e);
-	    AddSet(locals,e.name);
+	    if IsBound(e.name) then
+	      AddSet(locals,e.name);
+	    fi;
 	    if tok[tnum][2]="," then
 	      ExpectToken(",","impgen");
 	    fi;
@@ -1489,7 +1512,10 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 end;
 
 GAPOutput:=function(l,f)
-local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unravel;
+local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unravel;
+
+   sz:=SizeScreen();
+   SizeScreen([LINEWIDTH+2,sz[2]]);
 
    # process translation list
    tralala:=[[],[]];
@@ -1564,17 +1590,17 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unravel;
   local i,s,p;
     s:=Length(START);
     p:=Position(str,'\n');
-    while Length(str)+s>75 or p<>fail do
+    while Length(str)+s>COMMENTWIDTH or p<>fail do
       if p=fail then
-	i:=75-s;
+	i:=COMMENTWIDTH-s;
       else
-	i:=Minimum(75-s,p);
+	i:=Minimum(COMMENTWIDTH-s,p);
       fi;
       while i>0 and str[i]<>' ' and str[i]<>'\n' do
         i:=i-1;
       od;
       if i=0 then
-	i:=Minimum(75,Length(str));
+	i:=Minimum(COMMENTWIDTH,Length(str));
       fi;
       FilePrint(f,"#  ",str{[1..i-1]},"\n",START);
       str:=str{[i+1..Length(str)]};
@@ -1747,30 +1773,38 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unravel;
       FilePrint(f,"\"");
     elif t="C" or t="CA" then
       # fct. call
-      i:=PositionSorted(tralala[1],node.fct.name);
-      if i<>fail and IsBound(tralala[1][i]) and tralala[1][i]=node.fct.name then
-	FilePrint(f,tralala[2][i]);
+
+      # do we supress the call based on the argument?
+      if node.fct.name="Matrix" and Length(node.args)=1
+        and node.args[1].type="C" and node.args[1].fct.name="SparseMatrix" then
+        doit(node.args[1]);
       else
-	doit(node.fct);
+	i:=PositionSorted(tralala[1],node.fct.name);
+	if i<>fail and IsBound(tralala[1][i]) and tralala[1][i]=node.fct.name then
+	  FilePrint(f,tralala[2][i]);
+	else
+	  doit(node.fct);
+	fi;
+	FilePrint(f,"(");
+	printlist(node.args);
+	if t="CA" then
+	  FilePrint(f,":");
+	  for i in [1,3..Length(node.assg)-1] do
+	    if i>1 then
+	      FilePrint(f,",");
+	    fi;
+	    doit(node.assg[i]);
+	    FilePrint(f,":=");
+	    doit(node.assg[i+1]);
+	  od;
+	fi;
+	if IsBound(node.line) then
+	  FilePrint(f,");\n",START);
+	else
+	  FilePrint(f,")");
+	fi;
       fi;
-      FilePrint(f,"(");
-      printlist(node.args);
-      if t="CA" then
-        FilePrint(f,":");
-	for i in [1,3..Length(node.assg)-1] do
-	  if i>1 then
-	    FilePrint(f,",");
-	  fi;
-	  doit(node.assg[i]);
-	  FilePrint(f,":=");
-	  doit(node.assg[i+1]);
-	od;
-      fi;
-      if IsBound(node.line) then
-	FilePrint(f,");\n",START);
-      else
-	FilePrint(f,")");
-      fi;
+
     elif t="L" then
       # list access
       doit(node.var);
@@ -1795,11 +1829,14 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unravel;
       if t=fail then
 	t:=node.notperm;
       fi;
-      t:=UnFlat(t);
-      if t=fail then
-	t:=node.notperm;
+      i:=UnFlat(t);
+      if i<>fail then
+	t:=i;
       fi;
-      FilePrint(f,"NOTPERM",t,"\n");
+      if ValueOption("carefree")<>true then
+	FilePrint(f,"NOTPERM");
+      fi;
+      FilePrint(f,t,"\n":noblank);
     elif t="[*" then
       FilePrint(f,"# [*-list:\n",START,"[");
       printlist(node.args);
@@ -2304,6 +2341,7 @@ local i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unravel;
     doit(i);
   od;
   FilePrint(f,"\n");
+  SizeScreen(sz);
 
 end;
 

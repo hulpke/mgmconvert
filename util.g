@@ -66,6 +66,44 @@ local i,m,o;
   return m;
 end);
 
+DeclareGlobalFunction("SparseMatrix");
+
+InstallGlobalFunction(SparseMatrix,function(arg)
+local R,m,n,l,one,i;
+  if Length(arg)=3 then
+    R:=Cyclotomics;
+    m:=arg[1];
+    n:=arg[2];
+    l:=arg[3];
+  else
+    R:=arg[1];
+    m:=arg[2];
+    n:=arg[3];
+    l:=arg[4];
+  fi;
+  a:=NullMat(m,n,R);
+  one:=One(R);
+  if not IsList(l[1]) then
+    m:=1;
+    n:=1;
+    while n<>Length(l) do
+      n:=n+1;
+      for i in [1..l[n-1]] do
+        a[m][l[n]]:=one*l[n+1];
+	n:=n+2;
+      od;
+      m:=m+1;
+    od;
+  else
+    Error("similar format as by entries");
+  fi;
+
+  if IsFFECollection(R) then
+    a:=ImmutableMatrix(R,a);
+  fi;
+  return a;
+end);
+
 # GO, SO etc in magma are defined with different generators than in GAP and
 # it is not clear that the forms are the same -- in the end a
 # base-change might be required to get the same group, which is the reason for not simply
