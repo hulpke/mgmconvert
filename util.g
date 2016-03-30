@@ -69,7 +69,7 @@ end);
 DeclareGlobalFunction("SparseMatrix");
 
 InstallGlobalFunction(SparseMatrix,function(arg)
-local R,m,n,l,one,i;
+local R,m,n,l,one,i,a;
   if Length(arg)=3 then
     R:=Cyclotomics;
     m:=arg[1];
@@ -102,6 +102,12 @@ local R,m,n,l,one,i;
     a:=ImmutableMatrix(R,a);
   fi;
   return a;
+end);
+
+DeclareGlobalFunction("ScalarMat");
+
+InstallGlobalFunction(ScalarMat,function(dim,s)
+  return s*IdentityMat(dim,s);
 end);
 
 # GO, SO etc in magma are defined with different generators than in GAP and
