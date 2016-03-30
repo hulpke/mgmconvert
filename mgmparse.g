@@ -1511,6 +1511,43 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 
 end;
 
+RecursiveFindRec:=function(r,cond)
+local i,nodes,n;
+  if cond(r) then return r;fi;
+  nodes:=[r];
+  for n in nodes do
+    # breadth-first test before recursing
+    for i in RecFields(n) do
+      if cond(n.(i)) then
+	return n.(i);
+      elif IsRecord(n.(i)) then
+	# add to next layer
+	Add(nodes,n.(i));
+      fi;
+    od;
+  od;
+  return fail;
+end;
+
+RebuildRecTree:=function(r,replace,by)
+local new,i;
+  if r=replace then
+    return r.(by);
+  fi;
+  new:=rec();
+  for i in RecFields(r) do
+    if r.(i)=replace then # use identical?
+      new.(i):=RebuildRecTree(r.(i).(by),fail,by);
+      replace:=fail; # cannot happen again -- speedup
+    elif IsRecord(r.(i)) then
+      new.(i):=RebuildRecTree(r.(i),replace,by);
+    else
+      new.(i):=r.(i);
+    fi;
+  od;
+  return new;
+end;
+
 GAPOutput:=function(l,f)
 local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unravel;
 
@@ -1630,10 +1667,31 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
 	FilePrint(f,")");
 	FilePrint(f,";\n\n",START);
       else
-	doit(node.left);
-	FilePrint(f,":=");
-	doit(node.right);
-	FilePrint(f,";\n",START);
+	# is there a SELECT involved?
+	a:=RecursiveFindRec(node.right,
+             x->IsRecord(x) and IsBound(x.type) and x.type="select");
+        if a<>fail then
+	  # rebuild node.right twice, once with condition and once without
+	  FilePrint(f,"# rewritten select statement\n",START,"if ");
+	  doit(a.cond);
+	  indent(1);
+	  FilePrint(f," then\n",START);
+	  doit(rec(type:="A",left:=node.left,
+	    right:=RebuildRecTree(node.right,a,"yescase")));
+	  #indent(-1);
+	  FilePrint(f,"\b\belse");
+	  #indent(1);
+	  FilePrint(f,"\n",START);
+	  doit(rec(type:="A",left:=node.left,
+	    right:=RebuildRecTree(node.right,a,"nocase")));
+	  indent(-1);
+	  FilePrint(f,"\b\bfi;\n",START);
+	else
+	  doit(node.left);
+	  FilePrint(f,":=");
+	  doit(node.right);
+	  FilePrint(f,";\n",START);
+	fi;
       fi;
 
       if IsBound(node.implicitassg) then
