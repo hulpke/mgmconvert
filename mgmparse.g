@@ -1,5 +1,5 @@
 # Magma to GAP converter
-MGMCONVER:="version 0.39, 1/28/16"; # basic version
+MGMCONVER:="version 0.40, 4/01/16"; # basic version
 # (C) Alexander Hulpke
 
 LINEWIDTH:=80;
@@ -77,6 +77,7 @@ TRANSLATE:=[
 "Roots","RootsOfUPol",
 "ScalarMatrix","ScalarMat",
 "Solution","SolutionMat",
+"Sp","SP",
 "Sym","SymmetricGroup",
 "Transpose","TransposedMat",
 ];
@@ -2151,14 +2152,38 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
       indent(-1);
       FilePrint(f,")");
     elif t="if" then
-      if IsBound(node.isElif) then
-	FilePrint(f,"elif ");
-      else
+      if node.cond.type="exists" and IsBound(node.cond.varset) then 
+	if IsBound(node.isElif) then
+	  indent(1);
+	  FilePrint(f,"else\n",START);
+	  Unbind(node.isElif); # no special elif treatment --must be included if.
+	fi;
+	# implicit assignment in `if' condition
+	doit(node.cond.varset);
+	FilePrint(f,":=First(");
+	doit(node.cond.from);
+	FilePrint(f,",");
+	doit(node.cond.var);
+	FilePrint(f,"->");
+	doit(node.cond.cond);
+	FilePrint(f,");\n",START);
+
 	FilePrint(f,"if ");
+	doit(node.cond.varset);
+	FilePrint(f,"<>fail");
+      else
+	if IsBound(node.isElif) then
+	  FilePrint(f,"elif ");
+	else
+	  FilePrint(f,"if ");
+	fi;
+
+	doit(node.cond);
       fi;
-      doit(node.cond);
+
       indent(1);
       FilePrint(f," then\n",START);
+
       for i in node.block do
 	doit(i);
       od;
@@ -2172,7 +2197,12 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
 	  for i in node.elseblock do
 	    doit(i);
 	  od;
-	  str1:=false;
+	  if not (node.elseblock[1].cond.type="exists" and
+	    IsBound(node.elseblock[1].cond.varset)) then 
+	    str1:=false;
+	  else
+	    indent(-1);
+	  fi;
 	else
 	  FilePrint(f,"\b\belse\n");
 	  indent(1);
@@ -2187,6 +2217,7 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
       if str1 then
 	FilePrint(f,"\b\bfi;\n",START);
       fi;
+
     elif t="try" then
       FilePrint(f,"# TODO: try \n");
     elif t="while" then
