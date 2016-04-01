@@ -14,7 +14,7 @@ TOKENS:=["if","then","eq","cmpeq","neq","and","or","else","not","assigned",
 	 "procedure","end procedure","where","break",
          "function","return",":=","+:=","-:=","*:=","/:=","cat:=","=",
 	 "\\[","\\]","delete","exists",
-	 "[","]","(",")","\\(","\\)","`",";","#","!","<",">","&","$",":->","hom","map",
+	 "[","]","(",")","\\(","\\)","`",";","#","!","<",">","&","$","$$",":->","hom","map",
 	 "cat","[*","*]","{@","@}",
 	 "continue",
 	 "->","@@","forward","join",
@@ -198,7 +198,8 @@ CHARSOPS:="+-*/,;:=~!";
 MgmParse:=function(file)
 local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       ExpectToken,doselect,costack,locals,globvars,globimp,defines,problemarea,
-      f,l,lines,linum,w,a,idslist,tok,tnum,i,sel,osel,e,comment,forward;
+      f,l,lines,linum,w,a,idslist,tok,tnum,i,sel,osel,e,comment,forward,
+      thisfctname;
 
   locals:=[];
   globvars:=[];
@@ -797,7 +798,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	ExpectToken(">","endhom");
 
 
-      elif not (tok[tnum][1] in ["I","N","S"] or e="$") then
+      elif not (tok[tnum][1] in ["I","N","S"] or e="$" or e="$$") then
 	tnum:=tnum+1;
 	if e in ["-","#"] then
 	  a:=rec(type:=Concatenation("U",e),arg:=procidf());
@@ -824,6 +825,11 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	fi;
 
       else
+	if e="$$" then
+	  tok[tnum]:=["I",thisfctname];
+	  e:=thisfctname;
+	fi; # calling the current function
+
 	# identifier/number
 	if e="$" then
 	  a:=rec(type:="I",name:="$");
@@ -941,6 +947,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
     if tok[tnum]=["K","function"] or tok[tnum]=["K","intrinsic"] 
       or tok[tnum]=["K","procedure"] then
       # function
+      thisfctname:=tok[tnum-2][2];
       tnum:=tnum+1;
       ExpectToken("(");
       argus:=[];
@@ -1391,8 +1398,10 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  problemarea();
 	  Error("other keyword ",e);
 	fi;
-      elif e[1]="I" then
+      elif e[1]="I" or e[2]="$$" then
+	e:=[e[1],e[2]];
 	tnum:=tnum-1;
+	if e[2]="$$" then tok[tnum]:=["I",thisfctname]; fi;
 	a:=ReadExpression([",",":=","-:=","+:=","*:=","/:=","cat:=",";","<"]);
 	if a.type="I" then
 	  AddSet(locals,a.name);
@@ -2152,7 +2161,8 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
       indent(-1);
       FilePrint(f,")");
     elif t="if" then
-      if node.cond.type="exists" and IsBound(node.cond.varset) then 
+      if node.cond.type="exists" and IsBound(node.cond.varset) and
+	node.cond.varset<>false then 
 	if IsBound(node.isElif) then
 	  indent(1);
 	  FilePrint(f,"else\n",START);
