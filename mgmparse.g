@@ -1,5 +1,5 @@
 # Magma to GAP converter
-MGMCONVER:="version 0.40, 4/01/16"; # basic version
+MGMCONVER:="version 0.41, 4/01/16"; # basic version
 # (C) Alexander Hulpke
 
 LINEWIDTH:=80;
@@ -1777,7 +1777,31 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
       FilePrint(f,"Info(Info");
       doit(node.class);
       FilePrint(f,",1,");
-      printlist(node.values,"\"");
+      a:=node.values;
+      if a[1].type="S" and '%' in a[1].name then
+	str1:=SplitString(a[1].name,"%");
+	for i in [2..Length(str1)] do
+	  str1[i]:=str1[i]{[2..Length(str1[i])]}; # letter after % must go
+	od;
+	b:=[rec(type:="S",name:=str1[1])];
+	i:=2;
+	while i<=Length(str1) do
+	  Add(b,a[i]);
+	  Add(b,rec(type:="S",name:=str1[i]));
+	  i:=i+1;
+	od;
+	Append(b,a{[i..Length(a)]});
+	a:=b;
+      fi;
+      if a[Length(a)].type="S" then
+        b:=a[Length(a)].name;
+	if Length(b)>1 and b{[Length(b)-1..Length(b)]}="\\n" then
+	  Unbind(b[Length(b)]); # trailing \n will be supplied by Info
+	  Unbind(b[Length(b)]); # trailing \n will be supplied by Info
+	  if Length(b)=0 then Unbind(a[Length(a)]);fi;
+	fi;
+      fi;
+      printlist(a,"\"");
       FilePrint(f,");\n",START);
     elif t="Print" then
       # info
@@ -2143,6 +2167,10 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
         FilePrint(f,"Product(");
       elif node.op="cat" then
         FilePrint(f,"Concatenation(");
+      elif node.op="join" then
+        FilePrint(f,"Union(");
+      elif node.op="meet" then
+        FilePrint(f,"Intersection(");
       else
         Error("operation ",node.op," not yet done");
       fi;
@@ -2562,6 +2590,6 @@ local a,b,c,d,f,l,i,j,r,uses,defs,import,depend,order;
     CloseStream(f);
   od;
 
-  return List(l,x->[x.filename,List(l{x.dependall},y->y.filename)]);
+  return List(l,x->[x.filename,List(l{Filtered(x.dependall,IsInt)},y->y.filename)]);
   #return a;
 end;
