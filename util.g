@@ -1,5 +1,31 @@
 # Library of utility functions to aid in Magma code translation
 
+# two list-type functions tha are used in the translation of rep{
+
+# list of first elt satisfying condition or empty list
+BindGlobal("FilFirst",function(l,cond)
+local x;
+  for x in l do
+    if cond(x) then
+      return [x];
+    fi;
+  od;
+  return [];
+end);
+
+# first for which func does not return empty list
+BindGlobal("FRes",function(l,func)
+local x,a;
+  for x in l do
+    a:=func(x);
+    if Length(a)>0 then
+      return a;
+    fi;
+  od;
+  return fail;
+end);
+
+
 # generic subgroup generator, use in place of `SubStructure' if it is
 # groups. Should be improved to use more `closure'.
 SubgroupContaining:=function(arg)
