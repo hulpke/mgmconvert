@@ -61,7 +61,8 @@ TRANSLATE:=[
 "DiagonalMatrix","DiagonalMat",
 "Dimension","DimensionOfMatrixGroup",
 "Divisors","DivisorsInt",
-"Factorization","CollectedFactors", # not a proper GAP command but close 
+"Exclude","RemoveSet",
+"Factorisation","CollectedFactors", # not a proper GAP command but close 
 "GCD","Gcd",
 "Id","One",
 "Include","UniteSet",
