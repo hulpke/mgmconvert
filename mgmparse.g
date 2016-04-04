@@ -1,5 +1,5 @@
 # Magma to GAP converter
-MGMCONVER:="version 0.42, 4/03/16"; # basic version
+MGMCONVER:="version 0.43, 4/04/16"; # version number
 # (C) Alexander Hulpke
 
 LINEWIDTH:=80;
@@ -22,7 +22,7 @@ TOKENS:=["if","then","eq","cmpeq","neq","and","or","else","not","assigned",
 	 "{","}","|","::",":","@","cmpne","subset","by","try","end try",
 	 "catch err","catch e",
 	 "declare verbose","declare attributes","error if",
-	 "exists","forall","time",
+	 "exists","forall","time","rep",
 	 "sub","eval","select","rec","recformat","require","case","when","end case",
 	 "^^", "adj", "is", "non", "notadj", "notsubset", "sdiff", "xor",
 	 "%%%" # fake keyword for comments
@@ -596,12 +596,37 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	      tnum:=tnum+1;
 	      ExpectToken("in");
 
-	      e:=ReadExpression([close,"|"]); #part 2
+	      e:=ReadExpression([close,"|",","]); #part 2
 	      if tok[tnum][2]="|" then
 		ExpectToken("|");
 		a:=rec(type:=":F",op:=l,var:=a,from:=e);
 		a.test:=ReadExpression([close]);
 		ExpectToken(close);
+	      elif tok[tnum][2]="," then
+		a:=[a];
+		e:=[e];
+		while tok[tnum][2]="," do
+		  ExpectToken(",");
+		  Add(a,tok[tnum][2]); # next variable
+		  tnum:=tnum+1;
+		  ExpectToken("in");
+		  Add(e,ReadExpression([close,",","|"])); 
+		od;
+		a:=Reversed(a);e:=Reversed(e); # dependency order
+		if tok[tnum][2]="|" then
+		  ExpectToken("|");
+		  c:=[ReadExpression([close,","])];
+		  while tok[tnum][2]="," do
+		    ExpectToken(",");
+		    Add(c,ReadExpression([close,","])); # next variable
+		  od;
+		  ExpectToken(close);
+		  a:=rec(type:=":mult",op:=l,var:=a,from:=e,open:=open,
+	                 cond:=c);
+		else
+		  ExpectToken(close);
+		  a:=rec(type:=":mult",op:=l,var:=a,from:=e,open:=open);
+		fi;
 	      else
 		ExpectToken(close);
 		a:=rec(type:=":",op:=l,var:=a,from:=e,open:=open);
@@ -781,6 +806,11 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	c:=ReadExpression(["}"]);
 	ExpectToken("}");
         a:=rec(type:=e,var:=a,from:=b,cond:=c,varset:=d);
+      elif e="rep" then
+        ExpectToken("rep");
+	a:=procidf();
+	# make it rep or repmult
+	a.type:=Concatenation("rep",a.type{[2..Length(a.type)]});
       elif e="hom" or e="map" then
         tnum:=tnum+1; #ExpectToken("hom");
         ExpectToken("<","hom");
@@ -1603,7 +1633,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 end;
 
 RecursiveFindRec:=function(r,cond)
-local i,nodes,n;
+local i,nodes,n,j;
   if cond(r) then return r;fi;
   nodes:=[r];
   for n in nodes do
@@ -1614,6 +1644,15 @@ local i,nodes,n;
       elif IsRecord(n.(i)) then
 	# add to next layer
 	Add(nodes,n.(i));
+	# don't split a command block....
+      elif i<>"block" and IsList(n.(i)) and ForAny(n.(i),IsRecord) then
+	for j in n.(i) do
+	  if cond(j) then
+	    return j;
+	  elif IsRecord(j) then
+	    Add(nodes,j);
+	  fi;
+	od;
       fi;
     od;
   od;
@@ -1632,11 +1671,29 @@ local new,i;
       replace:=fail; # cannot happen again -- speedup
     elif IsRecord(r.(i)) then
       new.(i):=RebuildRecTree(r.(i),replace,by);
+    elif IsList(r.(i)) and ForAny(r.(i),IsRecord) then
+      new.(i):=List(r.(i),z->RebuildRecTree(z,replace,by));
     else
       new.(i):=r.(i);
     fi;
   od;
   return new;
+end;
+
+VariablesInExpression:=function(r)
+local l,i;
+  l:=[];
+  if IsList(r) then
+    l:=Concatenation(List(r,VariablesInExpression));
+  elif IsRecord(r) then
+    if IsBound(r.type) and r.type="I" then
+      return [r.name];
+    fi;
+    for i in RecFields(r) do
+      l:=Union(l,VariablesInExpression(r.(i)));
+    od;
+  fi;
+  return l;
 end;
 
 GAPOutput:=function(l,f)
@@ -1853,7 +1910,11 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
       FilePrint(f,"Info(Info");
       doit(node.class);
       FilePrint(f,",");
-      doit(node.level);
+      if IsInt(node.level) then
+      FilePrint(f,node.level);
+      else
+	doit(node.level);
+      fi;
       FilePrint(f,",");
       a:=node.values;
       if a[1].type="S" and '%' in a[1].name then
@@ -2228,6 +2289,121 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
       FilePrint(f,",",node.var,"->");
       doit(node.op);
       FilePrint(f,")");
+    elif t=":mult" then
+      if IsBound(node.cond) then
+	str1:=List(node.cond,
+	  x->Difference(List(VariablesInExpression(x),
+	    y->Position(node.var,y)),[fail]));
+	# which conditions to apply when
+	str2:=List([1..Length(node.var)],
+	  x->Filtered([1..Length(str1)],y->Maximum(str1[y])=x));
+	if ForAny(str2,x->Length(x)>1) then
+	  Error("multiple conditions on one variable -- still to do");
+	fi;
+      else
+	str2:=List(node.var,x->[]);
+      fi;
+      # list over multiple entities
+      if node.open<>"[" then
+	FilePrint(f," # ",node.open,"-multilist:\n",START,"  ");
+      fi;
+      for i in [1..Length(node.var)-1] do
+	indent(1);
+	FilePrint(f,"Concatenation(List(");
+	if Length(str2[i])>0 then
+	  FilePrint(f,"\n",START,"Filtered(");
+	  doit(node.from[i]);
+	  FilePrint(f,",",node.var[i],"->");
+	  doit(node.cond[str2[i][1]]);
+	  FilePrint(f,")\n",START);
+	else
+	  doit(node.from[i]);
+	fi;
+
+	FilePrint(f,",\n",START,node.var[i],"->");
+      od;
+      i:=Length(node.var);
+      FilePrint(f,"List(");
+
+      if Length(str2[i])>0 then
+	FilePrint(f,"\n",START,"Filtered(");
+	doit(node.from[i]);
+	FilePrint(f,",",node.var[i],"->");
+	doit(node.cond[str2[i][1]]);
+	FilePrint(f,")");
+      else
+	doit(node.from[i]);
+      fi;
+
+      FilePrint(f,",\n",START,"  ",node.var[i],"->");
+      doit(node.op);
+      FilePrint(f,")");
+      for i in [1..Length(node.var)-1] do
+	indent(-1);
+	if i<Length(node.var)-1 then
+	  FilePrint(f,")\n",START,"\b\b");
+	else
+	  FilePrint(f,")");
+	fi;
+      od;
+
+    elif t="repmult" then
+      if IsBound(node.cond) then
+	str1:=List(node.cond,
+	  x->Difference(List(VariablesInExpression(x),
+	    y->Position(node.var,y)),[fail]));
+	# which conditions to apply when
+	str2:=List([1..Length(node.var)],
+	  x->Filtered([1..Length(str1)],y->Maximum(str1[y])=x));
+	if ForAny(str2,x->Length(x)>1) then
+	  Error("multiple conditions on one variable -- still to do");
+	fi;
+      else
+	Error("repmult without condition");
+	str2:=List(node.var,x->[]);
+      fi;
+      # list over multiple entities
+      for i in [1..Length(node.var)-1] do
+	indent(1);
+	FilePrint(f,"FRes(");
+	if Length(str2[i])>0 then
+	  FilePrint(f,"\n",START,"Filtered(");
+	  doit(node.from[i]);
+	  FilePrint(f,",",node.var[i],"->");
+	  doit(node.cond[str2[i][1]]);
+	  FilePrint(f,")\n",START);
+	else
+	  doit(node.from[i]);
+	fi;
+
+	FilePrint(f,",\n",START,node.var[i],"->");
+      od;
+      i:=Length(node.var);
+      FilePrint(f,"List(");
+
+      if Length(str2[i])>0 then
+	FilePrint(f,"\n",START,"FilFirst(");
+	doit(node.from[i]);
+	FilePrint(f,",",node.var[i],"->");
+	doit(node.cond[str2[i][1]]);
+	FilePrint(f,")");
+      else
+	Error("missing condition in last variable");
+	doit(node.from[i]);
+      fi;
+
+      FilePrint(f,",\n",START,"  ",node.var[i],"->");
+      doit(node.op);
+      FilePrint(f,")");
+      for i in [1..Length(node.var)-1] do
+	indent(-1);
+	if i<Length(node.var)-1 then
+	  FilePrint(f,")\n",START,"\b\b");
+	else
+	  FilePrint(f,")[1]");
+	fi;
+      od;
+
     elif t=":F" then
       # is it a List(Filtered construct ?
       str1:=node.op.type<>"I" or node.op.name<>node.var;
