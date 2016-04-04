@@ -1950,16 +1950,21 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
       # fct. call
 
       # do we supress the call based on the argument?
-      if node.fct.name="Matrix" and Length(node.args)=1
+      if IsBound(node.fct.name) and node.fct.name="Matrix" and Length(node.args)=1
         and node.args[1].type="C" and node.args[1].fct.name="SparseMatrix" then
         doit(node.args[1]);
       else
-	i:=PositionSorted(tralala[1],node.fct.name);
-	if i<>fail and IsBound(tralala[1][i]) and tralala[1][i]=node.fct.name then
-	  FilePrint(f,tralala[2][i]);
+	if IsBound(node.fct.name) then
+	  i:=PositionSorted(tralala[1],node.fct.name);
+	  if i<>fail and IsBound(tralala[1][i]) and tralala[1][i]=node.fct.name then
+	    FilePrint(f,tralala[2][i]);
+	  else
+	    doit(node.fct);
+	  fi;
 	else
 	  doit(node.fct);
 	fi;
+
 	FilePrint(f,"(");
 	printlist(node.args);
 	if t="CA" then
