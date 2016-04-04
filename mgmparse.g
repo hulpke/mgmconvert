@@ -19,7 +19,8 @@ TOKENS:=["if","then","eq","cmpeq","neq","and","or","else","not","assigned",
 	 "continue",
 	 "->","@@","forward","join",
 	 "+","-","*","/","div","mod","in","notin","^","~","..",".",",","\"",
-	 "{","}","|","::",":","@","cmpne","subset","by","try","end try","catch err",
+	 "{","}","|","::",":","@","cmpne","subset","by","try","end try",
+	 "catch err","catch e",
 	 "declare verbose","declare attributes","error if",
 	 "exists","forall","time",
 	 "sub","eval","select","rec","recformat","require","case","when","end case",
@@ -70,6 +71,7 @@ TRANSLATE:=[
 "IsEven","IsEvenInt",
 "IsOdd","IsOddInt",
 "IsPrime","IsPrimeInt",
+"Isqrt","RootInt",
 "Matrix","MatrixByEntries",
 "Modexp","PowerMod",
 "Nrows","Length",
@@ -408,27 +410,33 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	sel:=Filtered(sel,x->Length(TOKENS[x])>=i and TOKENS[x][i]=l[i]);
       until Length(sel)=0;
       osel:=Filtered(osel,x->Length(TOKENS[x])=i-1);
-      if Length(osel)<>1 then 
+      if Length(osel)>1 then 
 	Error("nonunique");
-      fi;
-      if l{[1..i-1]}<>TOKENS[osel[1]] then Error("token error");fi;
-      a:=TOKENS[osel[1]];
-      if a="%%%" then # this is where the comment should go
-        Add(tok,["#",comment[1]]);
-	comment:=comment{[2..Length(comment)]};
-      elif a="\"" then
-        # string token
-	l:=l{[i..Length(l)]};
-        gimme();
-	i:=1;
-	while l[i]<>'"' or (i>1 and l[i-1]='\\') do
-	  i:=i+1;
-	od;
-	Add(tok,["S",l{[1..i-1]}]);
-	i:=i+1;
+      elif Length(osel)=0 then
+        # no token fits -- use as identifier
+	i:=Maximum(2,i);
+	Add(tok,["I",l{[1..i-1]}]);
       else
-	Add(tok,["O",a]);
+	if l{[1..i-1]}<>TOKENS[osel[1]] then Error("token error");fi;
+	a:=TOKENS[osel[1]];
+	if a="%%%" then # this is where the comment should go
+	  Add(tok,["#",comment[1]]);
+	  comment:=comment{[2..Length(comment)]};
+	elif a="\"" then
+	  # string token
+	  l:=l{[i..Length(l)]};
+	  gimme();
+	  i:=1;
+	  while l[i]<>'"' or (i>1 and l[i-1]='\\') do
+	    i:=i+1;
+	  od;
+	  Add(tok,["S",l{[1..i-1]}]);
+	  i:=i+1;
+	else
+	  Add(tok,["O",a]);
+	fi;
       fi;
+
       l:=l{[i..Length(l)]};eatblank();
     fi;
 
@@ -952,13 +960,20 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
     if tok[tnum]=["K","function"] or tok[tnum]=["K","intrinsic"] 
       or tok[tnum]=["K","procedure"] then
       # function
+      fcomment:="";
       thisfctname:=tok[tnum-2][2];
       tnum:=tnum+1;
       ExpectToken("(");
       argus:=[];
       while tok[tnum][2]<>")" and tok[tnum][2]<>":" do
-        if tok[tnum][1]="I" then
-	  Add(argus,tok[tnum][2]);
+        if tok[tnum][1]="I" or tok[tnum][2]="~" then
+	  if tok[tnum][2]="~" then
+	    ExpectToken("~");
+	    a:=Concatenation("TILDEVAR~",tok[tnum][2]);
+	    Add(argus,a);
+	  else
+	    Add(argus,tok[tnum][2]);
+	  fi;
 	  tnum:=tnum+1;
 	  if tok[tnum][2]="::" then
 	    ExpectToken("::");
@@ -988,13 +1003,13 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  if tok[tnum][2]="," then 
 	    tnum:=tnum+1; # multiple
 	  fi;
-        elif tok[tnum][2]="~" then
-	  ExpectToken("~");
-	  a:=Concatenation("TILDEVAR~",tok[tnum][2]);
-	  Add(argus,a);
-	  if tok[tnum][2]="," then 
-	    tnum:=tnum+1; # multiple
-	  fi;
+	elif tok[tnum][1]="#" then
+	  Add(fcomment,'/');
+	  Append(fcomment,tok[tnum][2]);
+	  Add(fcomment,'/');
+	  tnum:=tnum+1;
+	else
+	  Error("weird token in declaration?");
 	fi;
       od;
       assg:=false;
@@ -1018,7 +1033,11 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	    
       fi;
       ExpectToken(")");
-      fcomment:=fail;
+      while tok[tnum][1]="#" do
+	Append(fcomment,"/out:");
+	Append(fcomment,tok[tnum][2]);
+        tnum:=tnum+1;
+      od;
       if tok[tnum]=["O","->"] then
 	ExpectToken("->");
 	if tok[tnum][2]="[" then
@@ -1049,7 +1068,22 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  tnum:=tnum+1;
 	od;
 	ExpectToken("}");
-	fcomment:=a;
+	fcomment:=Concatenation(fcomment,a);
+      elif tok[tnum]=["O","{"] then
+	ExpectToken("{");
+        #fcomment:="";
+	while tok[tnum][2]<>"}" do
+	  if Length(fcomment)>0 then
+	    Add(fcomment,' ');
+	  fi;
+	  if not IsString(tok[tnum][2]) then
+	    Append(a,String(tok[tnum][2]));
+	  else
+	    Append(a,tok[tnum][2]);
+	  fi;
+	  tnum:=tnum+1;
+	od;
+	ExpectToken("}");
       fi;
       if tok[tnum][2]=";" then
 	#spurious ; after function definition
@@ -1060,7 +1094,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       tnum:=tnum+1; # do end .... token
 
       a:=rec(type:="F",args:=argus,locals:=Union(a[1],locopt),block:=a[2]);
-      if fcomment<>fail then
+      if Length(fcomment)>0 then
         a.comment:=fcomment;
       fi;
       if assg<>false then
@@ -1178,12 +1212,12 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  ExpectToken(";",1);
 
 	elif e[2]="try" then
-	  b:=ReadBlock(["catch err","end try"]:inner);
+	  b:=ReadBlock(["catch err","catch e","end try"]:inner);
 	  locals:=Union(locals,b[1]);
 	  a:=rec(type:="try",block:=b[2]);
 	  Add(l,a);
-	  if tok[tnum][2]="catch err" then
-	    ExpectToken("catch err");
+	  if tok[tnum][2]="catch err" or tok[tnum][2]="catch e" then
+	    ExpectToken(ShallowCopy(tok[tnum][2]));
 	    b:=ReadBlock(["end try"]);
 	    locals:=Union(locals,b[1]);
 	    a.errblock:=b[2];
@@ -1276,7 +1310,13 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  or e[2]="vprintf" then
 	  if e[2]="vprint" or e[2]="vprintf" then
 	    kind:="Info";
-	    a:=ReadExpression([":"]);
+	    a:=ReadExpression([":",","]);
+	    if tok[tnum][2]="," then
+	      ExpectToken(",");
+	      d:=ReadExpression([":"]);
+	    else
+	      d:=1;
+	    fi;
 	    ExpectToken(":");
 	  elif e[2]="print" or e[2]="printf" then
 	    kind:="Print";
@@ -1311,7 +1351,9 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  #fi;
 	  ExpectToken(";",7);
 
-	  Add(l,rec(type:=kind,class:=a,values:=c));
+	  a:=rec(type:=kind,class:=a,values:=c);
+	  if kind="Info" then a.level:=d;fi;
+	  Add(l,a);
 
         elif e[2]="continue" then
 	  ExpectToken(";",-8);
@@ -1807,7 +1849,9 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
       # info
       FilePrint(f,"Info(Info");
       doit(node.class);
-      FilePrint(f,",1,");
+      FilePrint(f,",");
+      doit(node.level);
+      FilePrint(f,",");
       a:=node.values;
       if a[1].type="S" and '%' in a[1].name then
 	str1:=SplitString(a[1].name,"%");
