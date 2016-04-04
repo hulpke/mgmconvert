@@ -400,7 +400,16 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       elif a="is" then
         Add(tok,["O",":="]);
       else
-        Add(tok,["K",TOKENS[i]]);
+	if TOKENS[i]="rec" then
+	  if l[1]='<' then
+	    Add(tok,["K",TOKENS[i]]);
+	  else
+	    # replace variable name `rec'
+	    Add(tok,["I","reco"]);
+	  fi;
+	else
+	  Add(tok,["K",TOKENS[i]]);
+	fi;
       fi;
     else
       sel:=[1..Length(TOKENS)];
