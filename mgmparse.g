@@ -368,7 +368,8 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       a:=l{[1..i-1]};
       l:=l{[i..Length(l)]};eatblank();
       i:=Position(TOKENS,a);
-      if a="end" or a="declare" or a="catch" or (a="error" and l{[1..3]}=" if") then
+
+      if a="end" or a="declare" or a="catch" or (a="error" and l{[1..2]}="if") then
         # special case of `end' token -- blank in name
 	i:=1;
 	while l[i] in CHARSIDS do
@@ -549,7 +550,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	fi;
 	ExpectToken(")");
         return rec(type:="paren",arg:=a);
-      elif e in ["[","{","[*","{@"] then
+      elif e in ["[","{","[*","{@","<"] then
 	# list tokens
 	open:=e;
 	if e="[" then
@@ -564,6 +565,9 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	elif e="{@" then
 	  close:="@}";
 	  ltype:="{@";
+	elif e="<" then
+	  close:=">";
+	  ltype:="<";
 	else
 	  Error("other list type?");
 	fi;
@@ -1230,8 +1234,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  ExpectToken(",");
 	  b:=ReadExpression([";"]);
 	  ExpectToken(";");
-	  Add(l,rec(type:="if",cond:=a,block:=[b]));
-
+	  Add(l,rec(type:="if",cond:=a,block:=[rec(type:="Print",values:=[b])]));
 
 	elif e[2]="while" then
 	  a:=ReadExpression(["do"]);
