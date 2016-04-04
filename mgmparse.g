@@ -1,5 +1,5 @@
 # Magma to GAP converter
-MGMCONVER:="version 0.41, 4/01/16"; # basic version
+MGMCONVER:="version 0.42, 4/03/16"; # basic version
 # (C) Alexander Hulpke
 
 LINEWIDTH:=80;
@@ -55,11 +55,13 @@ TOKENS:=Union(TOKENS,PAROP);
 # translation list for global function names
 TRANSLATE:=[
 "Alt","AlternatingGroup",
+"CompanionMatrix","CompanionMat",
 "Determinant","DeterminantMat",
 "DiagonalJoin","DirectSumMat",
 "DiagonalMatrix","DiagonalMat",
 "Dimension","DimensionOfMatrixGroup",
 "Divisors","DivisorsInt",
+"Factorization","CollectedFactors", # not a proper GAP command but close 
 "GCD","Gcd",
 "Id","One",
 "Include","UniteSet",
@@ -340,6 +342,8 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       Error("expected token ",s," not ",tok[tnum]," ",o);
     fi;
     tnum:=tnum+1;
+
+#Print("I'm at:"); problemarea(); Print("\n");
 
   end;
 
@@ -959,6 +963,12 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	    ExpectToken("::");
 	    if tok[tnum][1]="I" then
 	      tnum:=tnum+1; # type identifier
+	      if tok[tnum][2]="[" then
+		# list type?
+		ExpectToken("[");
+		ReadExpression(["]"]);
+		ExpectToken("]");
+	      fi;
 	    elif tok[tnum][2]="[" then
 	      # list type?
 	      ExpectToken("[");
@@ -1010,7 +1020,12 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       fcomment:=fail;
       if tok[tnum]=["O","->"] then
 	ExpectToken("->");
-	if tok[tnum][1]<>"I" then
+	if tok[tnum][2]="[" then
+	  # to list type
+	  ExpectToken("[");
+	  ReadExpression(["]"]);
+	  #ExpectToken("]"); # will be token in comment (instead of variable)
+	elif tok[tnum][1]<>"I" then
 	  problemarea();
 	  Error("-> unexpected");
 	fi;
@@ -1204,6 +1219,11 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	    ExpectToken("to");
 	    c:=ReadExpression(["do","by"]);
 	    c:=rec(type:="R",from:=b,to:=c);
+	    if tok[tnum][2]="by" then
+	      ExpectToken("by");
+	      b:=ReadExpression(["do"]);
+	      c.step:=b;
+	    fi;
 	  fi;
 
 	  ExpectToken("do");
@@ -1240,7 +1260,11 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	elif e[2]="return" then
 	  a:=[];
 	  while tok[tnum][2]<>";" do
-	    Add(a,ReadExpression([",",";"]));
+	    b:=ReadExpression([",",";","select"]);
+	    if tok[tnum][2]="select" then
+	      b:=doselect(b);
+	    fi;
+	    Add(a,b);
 	    if tok[tnum][2]="," then
 	      tnum:=tnum+1;
 	    fi;
@@ -1365,8 +1389,14 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  od;
 
         elif e[2]="delete" then
-	  a:=ReadExpression([";"]);
-	  Add(l,rec(type:="A",left:=a,right:=rec(type:="S",name:="delete")));
+	  a:=ReadExpression([";",","]);
+	  b:=[a];
+	  while tok[tnum][2]<>";" do
+	    ExpectToken(",",-11/2);
+	    a:=ReadExpression([";",","]);
+	    Add(b,a);
+	  od;
+	  Add(l,rec(type:="delete",del:=b));
 	  ExpectToken(";",11/2);
 	elif e[2]="break" then
 	  a:=ReadExpression([";"]);
@@ -1948,7 +1978,9 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
       if IsBound(node.step) then
 	FilePrint(f,",");
 	doit(node.from);
-	FilePrint(f,"+");
+	if node.step.type<>"U-" then
+	  FilePrint(f,"+");
+	fi;
 	doit(node.step);
       fi;
       FilePrint(f,"..");
@@ -2434,6 +2466,12 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
       FilePrint(f,";\n",START);
     elif t="continue" then
       FilePrint(f,"continue;\n",START);
+    elif t="delete" then
+      for i in node.del do
+        FilePrint(f,"Unbind(");
+	doit(i);
+        FilePrint(f,");\n",START);
+      od;
     elif t="none" then
       #Error("UUU");
       FilePrint(f,"#NOP\n",START);
