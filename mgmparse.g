@@ -204,7 +204,7 @@ MgmParse:=function(file)
 local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       ExpectToken,doselect,costack,locals,globvars,globimp,defines,problemarea,
       f,l,lines,linum,w,a,idslist,tok,tnum,i,sel,osel,e,comment,forward,
-      thisfctname;
+      thisfctname,cmdstack,ProcessWhere,IsAtToken;
 
   locals:=[];
   globvars:=[];
@@ -311,6 +311,13 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
     eatblank();
   end;
 
+  IsAtToken:=function(str)
+    if tok[tnum][2]="where" then
+      Error("IsAtWhere");
+    fi;
+    return tok[tnum][2]=str;
+  fi;
+
   ExpectToken:=function(arg)
   local s,o,i,a;
     s:=arg[1];
@@ -331,6 +338,11 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
         i:=i-1;
       od;
       tok[tnum]:=a;
+    fi;
+
+    # is there still a `where'?
+    if s<>"where" and tok[tnum][2]="where" then
+      ProcessWhere([s]);
     fi;
 
     if tok[tnum][2]<>s then
@@ -379,10 +391,6 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	l:=l{[i..Length(l)]};eatblank();
 	i:=Position(TOKENS,a);
         Add(tok,["K",TOKENS[i]]);
-      elif a="where" then
-	# where -- make a belated assignment
-	Add(tok,["O",";"]);
-	Add(tok,["#","#T WHERE -- MOVE BEFORE PREVIOUS LINE"]);
       elif i=fail then
 	if ForAll(a,x->x in CHARS_DIGITS) then
 	  Add(tok,["N",Int(a)]);
@@ -478,6 +486,24 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
     return a;
   end;
 
+  ProcessWhere:=function(stops)
+  local a,b;
+    ExpectToken("where");
+    a:=ReadExpression(["is",":=",","]);
+    if tok[tnum][2]="," then
+      a:=[a];
+      while tok[tnum][2]="," do
+	b:=ReadExpression(["is",":=",","]);
+	Add(a,b);
+      od;
+    fi;
+    tnum:=tnum+1; # skip is/:=
+    b:=ReadExpression(stops);
+    b:=rec(type:="A",left:=a,right:=b);
+    if IsList(a) then b.type:="Amult";fi;
+    Add(cmdstack,b);
+  end;
+
   # read identifier, call, function 
   ReadExpression:=function(stops)
   local obj,e,a,b,c,argus,procidf,doprocidf,op,assg,val,pre,lbinops,
@@ -495,7 +521,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	if tok[tnum][2]="," then
 	  # array indexing -- translate to iterated index by opening a parenthesis and keeping
 	  # position
-	  Error("multi-post-index");
+	  tok[tnum]:=["O","["];
 	else
 	  ExpectToken("]");
 	fi;
@@ -603,17 +629,34 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	      fi;
 	      a:=tok[tnum][2]; # part 2
 	      tnum:=tnum+1;
-	      ExpectToken("in");
+	      if tok[tnum][2]="in" then
+		ExpectToken("in");
+		e:=ReadExpression([close,"|",","]); #part 2
+	      elif tok[tnum][2]="," then
+	        a:=[a];
+		while tok[tnum][2]="," do
+		  ExpectToken(",");
+		  Add(a,tok[tnum][2]);
+		  tnum:=tnum+1;
+		od;
+		ExpectToken("in");
+		e:=ReadExpression([close,"|",","]); #part 2
+		e:=ListWithIdenticalEntries(Length(a),e);
+	      else
+	        Error("misformed");
+	      fi;
 
-	      e:=ReadExpression([close,"|",","]); #part 2
 	      if tok[tnum][2]="|" then
 		ExpectToken("|");
 		a:=rec(type:=":F",op:=l,var:=a,from:=e);
-		a.test:=ReadExpression([close]);
+		a.cond:=ReadExpression([close]);
 		ExpectToken(close);
 	      elif tok[tnum][2]="," then
-		a:=[a];
-		e:=[e];
+		if not IsList(a) then
+		  # make list of variables if not yet
+		  a:=[a];
+		  e:=[e];
+		fi;
 		while tok[tnum][2]="," do
 		  ExpectToken(",");
 		  Add(a,tok[tnum][2]); # next variable
@@ -639,6 +682,9 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	      else
 		ExpectToken(close);
 		a:=rec(type:=":",op:=l,var:=a,from:=e,open:=open);
+		if IsList(e) then
+		  a.type:=":mult";
+		fi;
 	      fi;
 	      return a;
 	    elif tok[tnum][2]=".." then
@@ -805,16 +851,23 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	else
 	  d:=false; 
 	fi;
-	ExpectToken("{");
-	a:=ReadExpression([":",","]);
-	ExpectToken(":");
-	a:=ReadExpression(["in"]);
-	ExpectToken("in");
-	b:=ReadExpression(["|"]);
-	ExpectToken("|");
-	c:=ReadExpression(["}"]);
-	ExpectToken("}");
-        a:=rec(type:=e,var:=a,from:=b,cond:=c,varset:=d);
+	b:=ReadExpression(Concatenation(stops,BINOPS));
+	a:=rec(type:=e,var:=rec(type:="I",name:=b.var),from:=b.from,cond:=b.cond,varset:=d,op:=b.op);
+        #if IsList(b.from) then
+	#  Append(a.type,"mult");
+	#fi;
+
+#	#Error("expect");
+	#ExpectToken("{");
+	#a:=ReadExpression([":",","]);
+	#ExpectToken(":");
+	#a:=ReadExpression(["in"]);
+	#ExpectToken("in");
+	#b:=ReadExpression(["|"]);
+	#ExpectToken("|");
+	#c:=ReadExpression(["}"]);
+	#ExpectToken("}");
+        #a:=rec(type:=e,var:=a,from:=b,cond:=c,varset:=d);
       elif e="rep" then
         ExpectToken("rep");
 	a:=procidf();
@@ -989,6 +1042,10 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	    ExpectToken(",");
 	    b:=ReadExpression(stops);
 	    a:=rec(type:="pair",left:=a,right:=b);
+	  elif e="where" then
+
+	    ProcessWhere(stops);
+	    a:=ReadExpression(stops);
 	  else
 	    problemarea();
 	    Error("eh!");
@@ -1215,6 +1272,14 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	od;
 	costack:=[];
       fi;
+      if Length(cmdstack)>0 then
+         for e in cmdstack do
+	   Add(l,rec(type:="co",text:="POSTPONED `where'"));
+	   Add(l,e);
+	 od;
+	 cmdstack:=[];
+      fi;
+
       e:=tok[tnum];
       tnum:=tnum+1;
       if e[2]="time" then
@@ -1629,6 +1694,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
   end;
 
   costack:=[];
+  cmdstack:=[];
   tnum:=1; # indicate in token list
 
   # actual work
@@ -2298,6 +2364,7 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
       FilePrint(f,",",node.var,"->");
       doit(node.op);
       FilePrint(f,")");
+
     elif t=":mult" then
       if IsBound(node.cond) then
 	str1:=List(node.cond,
@@ -2413,6 +2480,59 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
 	fi;
       od;
 
+    elif t="forallmult" or t="existsmult" then
+      if node.varset<>false then
+        doit(node.varset);
+	FilePrint(f,":=");
+      fi;
+      if t="forall" then
+	FilePrint(f,"ForAll(");
+      else
+	FilePrint(f,"ForAny(");
+      fi;
+      doit(node.from);
+      FilePrint(f,",");
+      doit(node.var);
+      FilePrint(f,"->");
+      doit(node.cond);
+      FilePrint(f,")");
+
+    elif t="forall" or t="exists" then
+      if node.varset<>false then
+        doit(node.varset);
+	FilePrint(f,":=");
+      fi;
+      if t="forall" then
+	str1:="ForAll";
+      else
+	str1:="ForAny";
+      fi;
+      if IsList(node.from) then
+        for i in [1..Length(node.from)] do
+	  FilePrint(f,str1,"(");
+	  doit(node.from[i]);
+	  indent(1);
+	  FilePrint(f,",\n",START);
+	  FilePrint(f,node.var.name[i]); # the way its constructed a silly wrapper
+	  FilePrint(f,"->");
+	od;
+	if Length(node.cond)>1 then Error("multicond");fi;
+	doit(node.cond[1]);
+        for i in [1..Length(node.from)] do
+	  indent(-1);
+	  FilePrint(f,")");
+	od;
+
+      else
+	FilePrint(f,str1,"(");
+	doit(node.from);
+	FilePrint(f,",");
+	doit(node.var);
+	FilePrint(f,"->");
+	doit(node.cond);
+	FilePrint(f,")");
+      fi;
+
     elif t=":F" then
       # is it a List(Filtered construct ?
       str1:=node.op.type<>"I" or node.op.name<>node.var;
@@ -2423,7 +2543,7 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
       FilePrint(f,"Filtered(");
       doit(node.from);
       FilePrint(f,",",node.var,"->");
-      doit(node.test);
+      doit(node.cond);
       FilePrint(f,")");
       if str1 then
 	FilePrint(f,",",node.var,"->");
@@ -2674,22 +2794,6 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
       else
         Error("unknown kind ",node.kind);
       fi;
-    elif t="forall" or t="exists" then
-      if node.varset<>false then
-        doit(node.varset);
-	FilePrint(f,":=");
-      fi;
-      if t="forall" then
-	FilePrint(f,"ForAll(");
-      else
-	FilePrint(f,"ForAny(");
-      fi;
-      doit(node.from);
-      FilePrint(f,",");
-      doit(node.var);
-      FilePrint(f,"->");
-      doit(node.cond);
-      FilePrint(f,")");
 
     elif t="error" then
       FilePrint(f,"Error(");
