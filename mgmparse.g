@@ -313,10 +313,10 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 
   IsAtToken:=function(str)
     if tok[tnum][2]="where" then
-      Error("IsAtWhere");
+      ProcessWhere([str,",",";",":",">"]); # maybe other separators
     fi;
     return tok[tnum][2]=str;
-  fi;
+  end;
 
   ExpectToken:=function(arg)
   local s,o,i,a;
@@ -490,9 +490,10 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
   local a,b;
     ExpectToken("where");
     a:=ReadExpression(["is",":=",","]);
-    if tok[tnum][2]="," then
+    if IsAtToken(",") then
       a:=[a];
-      while tok[tnum][2]="," do
+      while IsAtToken(",") do
+	tnum:=tnum+1;
 	b:=ReadExpression(["is",":=",","]);
 	Add(a,b);
       od;
@@ -514,11 +515,11 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
     procidf:=function()
     local a,b;
       a:=doprocidf();
-      while not "[" in stops and tok[tnum][2]="[" do
+      while not "[" in stops and IsAtToken("[") do
 	ExpectToken("[");
 	# postfacto indexing
 	b:=ReadExpression(["]",","]);
-	if tok[tnum][2]="," then
+	if IsAtToken(",") then
 	  # array indexing -- translate to iterated index by opening a parenthesis and keeping
 	  # position
 	  tok[tnum]:=["O","["];
@@ -542,17 +543,18 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       end;
 
       e:=eset();
+      a:=fail;
 
       if e in stops then
 	a:=rec(type:="none");
       elif e="(" or e="\\(" then
 	tnum:=tnum+1;
         a:=ReadExpression([")",","]);
-	if tok[tnum][2]=","  then 
+	if IsAtToken(",")  then 
 	  # pair, permutation
 	  ExpectToken(",");
 	  b:=ReadExpression([")",","]);
-	  if tok[tnum][2]=")" and tok[tnum+1][2]<>"(" then
+	  if IsAtToken(")") and tok[tnum+1][2]<>"(" then
 	    # pair
 	    ExpectToken(")");
 	    a:=rec(type:="pair",left:=a,right:=b);
@@ -562,7 +564,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	    b:=[a.name,b.name];
 	    a:=();
 	    repeat
-	      while tok[tnum][2]="," do
+	      while IsAtToken(",") do
 		ExpectToken(",",1);
 		e:=ReadExpression([")",","]);
 		Add(b,e.name);
@@ -570,7 +572,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	      ExpectToken(")",1);
 	      b:=MappingPermListList(b,Concatenation(b{[2..Length(b)]},b{[1]}));
 	      a:=a*b;
-	      if tok[tnum][2]="(" then
+	      if IsAtToken("(") then
 		ExpectToken("(");
 		# continue
 		b:=ReadExpression([")",","]);
@@ -609,18 +611,18 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	ExpectToken(open);
 	l:=[];
 	b:=fail;
-	if tok[tnum][2]=close then
+	if IsAtToken(close) then
 	  #empty list
 	  tnum:=tnum;
 	else
 	  repeat 
 	    #tnum:=tnum+1;
 	    a:=ReadExpression([close,",",":","..","|"]);
-	    if tok[tnum][2]="|" then
+	    if IsAtToken("|") then
 	      ExpectToken("|");
 	      b:=a;
 	      a:=fail;
-	    elif tok[tnum][2]=":" then
+	    elif IsAtToken(":") then
 	      ExpectToken(":");
 	      l:=a; # part 1
 	      if tok[tnum][1]<>"I" then
@@ -629,12 +631,12 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	      fi;
 	      a:=tok[tnum][2]; # part 2
 	      tnum:=tnum+1;
-	      if tok[tnum][2]="in" then
+	      if IsAtToken("in") then
 		ExpectToken("in");
 		e:=ReadExpression([close,"|",","]); #part 2
-	      elif tok[tnum][2]="," then
+	      elif IsAtToken(",") then
 	        a:=[a];
-		while tok[tnum][2]="," do
+		while IsAtToken(",") do
 		  ExpectToken(",");
 		  Add(a,tok[tnum][2]);
 		  tnum:=tnum+1;
@@ -646,18 +648,18 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	        Error("misformed");
 	      fi;
 
-	      if tok[tnum][2]="|" then
+	      if IsAtToken("|") then
 		ExpectToken("|");
 		a:=rec(type:=":F",op:=l,var:=a,from:=e);
 		a.cond:=ReadExpression([close]);
 		ExpectToken(close);
-	      elif tok[tnum][2]="," then
-		if not IsList(a) then
+	      elif IsAtToken(",") then
+		if not (IsList(a) and IsList(a[1])) then
 		  # make list of variables if not yet
 		  a:=[a];
 		  e:=[e];
 		fi;
-		while tok[tnum][2]="," do
+		while IsAtToken(",") do
 		  ExpectToken(",");
 		  Add(a,tok[tnum][2]); # next variable
 		  tnum:=tnum+1;
@@ -665,10 +667,10 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 		  Add(e,ReadExpression([close,",","|"])); 
 		od;
 		a:=Reversed(a);e:=Reversed(e); # dependency order
-		if tok[tnum][2]="|" then
+		if IsAtToken("|") then
 		  ExpectToken("|");
 		  c:=[ReadExpression([close,","])];
-		  while tok[tnum][2]="," do
+		  while IsAtToken(",") do
 		    ExpectToken(",");
 		    Add(c,ReadExpression([close,","])); # next variable
 		  od;
@@ -687,10 +689,10 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 		fi;
 	      fi;
 	      return a;
-	    elif tok[tnum][2]=".." then
+	    elif IsAtToken("..") then
 	      ExpectToken("..");
 	      e:=ReadExpression([close,"by"]); #part 2
-	      if tok[tnum][2]="by" then
+	      if IsAtToken("by") then
 		ExpectToken("by");
 		a:=rec(type:="R",from:=a,to:=e,step:=ReadExpression([close]));
 	      else
@@ -698,13 +700,13 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	      fi;
 	      ExpectToken(close);
 	      return a;
-	    elif tok[tnum][2]="," then
+	    elif IsAtToken(",") then
 	      ExpectToken(",");
 	    fi;
 	    if a<>fail then
 	      Add(l,a);
 	    fi;
-	  until tok[tnum][2]=close;
+	  until IsAtToken(close);
 
 	fi;
 	ExpectToken(close);
@@ -718,7 +720,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  tnum:=tnum+1;
 	  a:=ReadExpression([">",","]);
 	  Add(l,a);
-	until tok[tnum][2]=">";
+	until IsAtToken(">");
 	ExpectToken(">",6);
 	a:=rec(type:="<",args:=l);
       elif e="\\[" then
@@ -727,7 +729,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  tnum:=tnum+1;
 	  a:=ReadExpression(["\\]","]",","]);
 	  Add(l,a);
-	until tok[tnum][2]="\\]" or tok[tnum][2]="]";
+	until IsAtToken("\\]") or IsAtToken("]");
 	tnum:=tnum+1; # as ExpectToken("\\]","]");
 	if not ForAll(l,x->IsBound(x.name)) then
 	  a:=rec(type:="notperm",notperm:=l);
@@ -751,7 +753,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 #	    tnum:=tnum+1;
 #	    a:=ReadExpression(["*]",","]);
 #	    Add(l,a);
-#	  until tok[tnum][2]="*]";
+#	  until IsAtToken("*]");
 #	fi;
 #	ExpectToken("*]");
 #	a:=rec(type:="[*",args:=l);
@@ -766,7 +768,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 #	    tnum:=tnum+1;
 #	    a:=ReadExpression(["@}",","]);
 #	    Add(l,a);
-#	  until tok[tnum][2]="@}";
+#	  until IsAtToken("@}");
 #	fi;
 #	ExpectToken("@}");
 #	a:=rec(type:="{@",args:=l);
@@ -775,22 +777,22 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 #	ExpectToken("{");
 #	l:=[];
 #	b:=false;
-#	if tok[tnum][2]="}" then
+#	if IsAtToken("}") then
 #	  #empty list
 #	  tnum:=tnum;
 #	else
 #	  repeat 
 #	    a:=ReadExpression(["}",",",".."]);
-#	    if tok[tnum][2]=".." then
+#	    if IsAtToken("..") then
 #	      ExpectToken("..");
 #	      b:=true;
 #	      Add(l,a);
 #	      a:=ReadExpression(["}"]);
-#	    elif tok[tnum][2]="," then
+#	    elif IsAtToken(",") then
 #	      ExpectToken(",");
 #	    fi;
 #	    Add(l,a);
-#	  until tok[tnum][2]="}";
+#	  until IsAtToken("}");
 #	fi;
 #	ExpectToken("}");
 #	if b=true then
@@ -807,12 +809,12 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	ExpectToken("|");
 	l:=[];
 	repeat
-	  if tok[tnum][2]="," then
+	  if IsAtToken(",") then
 	    ExpectToken(",");
 	  fi;
 	  a:=ReadExpression([">",","]);
 	  Add(l,a);
-	until tok[tnum][2]=">";
+	until IsAtToken(">");
 	ExpectToken(">",2);
 	a:=rec(type:="sub",within:=e,span:=l);
       elif e="recformat" then
@@ -831,20 +833,20 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	assg:=[];
 	if tok[tnum][2]<>">" then
 	  repeat
-	    if tok[tnum][2]="," then tnum:=tnum+1;fi;
+	    if IsAtToken(",") then tnum:=tnum+1;fi;
 	    b:=ReadExpression([":="]);
 	    Add(assg,b);
 	    ExpectToken(":=");
 	    b:=ReadExpression([",",">"]);
 	    Add(assg,b);
-	  until tok[tnum][2]=">";
+	  until IsAtToken(">");
 	fi;
 	ExpectToken(">",4);
 	a:=rec(type:="rec",format:=e,assg:=assg);
 
       elif e="forall" or e="exists" then
 	ExpectToken(e);
-        if tok[tnum][2]="(" then
+        if IsAtToken("(") then
 	  ExpectToken("(");
 	  d:=ReadExpression([")"]);
 	  ExpectToken(")");
@@ -882,18 +884,18 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	ExpectToken("|");
 	a:=rec(type:=e,domain:=a,codomain:=b);
 	c:=ReadExpression([":->",">",","]);
-	if tok[tnum][2]=">" then
+	if IsAtToken(">") then
 	  # image defn
 	  a.kind:="images";
 	  a.images:=c;
-	elif tok[tnum][2]=":->" then
+	elif IsAtToken(":->") then
 	  # fct defn.
 	  ExpectToken(":->");
 	  d:=ReadExpression([">"]);
 	  a.kind:="fct";
 	  a.var:=c;
 	  a.expr:=d;
-	elif tok[tnum][2]="," then
+	elif IsAtToken(",") then
 	  # gens, imgs
 	  a.kind:="genimg";
 	  a.gens:=c;
@@ -960,17 +962,17 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	    while tok[tnum][2]<>")"  and tok[tnum][2]<>":" do
 	      b:=ReadExpression([",",")",":"]);
 	      Add(argus,b);
-	      if tok[tnum][2]="," then
+	      if IsAtToken(",") then
 		ExpectToken(",");
 	      fi;
 	    od;
-	    if tok[tnum][2]=":" then
+	    if IsAtToken(":") then
 	      ExpectToken(":");
 	      while tok[tnum][2]<>")" do
 		Add(assg,ReadExpression([":="]));
 		ExpectToken(":=");
 		Add(assg,ReadExpression([")",","]));
-		if tok[tnum][2]="," then
+		if IsAtToken(",") then
 		  ExpectToken(",");
 		fi;
 	      od;
@@ -989,7 +991,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	    # index
 	    tnum:=tnum+1;
 	    b:=ReadExpression(["]",","]);
-	    if tok[tnum][2]="," then
+	    if IsAtToken(",") then
 	      # array indexing -- translate to iterated index by opening a parenthesis and keeping
 	      # position
 	      tok[tnum]:=["O","["];
@@ -1005,7 +1007,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	    repeat
 	      a:=ReadExpression(["|",","]);
 	      Add(b,a);
-	      if tok[tnum][2]="," then
+	      if IsAtToken(",") then
 	        ExpectToken(",");
 	      else
 	        a:=fail;
@@ -1017,13 +1019,13 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	    repeat
 	      a:=ReadExpression([",",">"]);
 	      Add(c,a);
-	      if tok[tnum][2]="," then
+	      if IsAtToken(",") then
 	        ExpectToken(",");
 	      else
 		a:=fail;
 	      fi;
             until a=fail;
-	    if tok[tnum][2]=":" then
+	    if IsAtToken(":") then
 	      ExpectToken(":");
 	      #make rest of assignment a comment
 	      e:=tnum;
@@ -1045,7 +1047,9 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  elif e="where" then
 
 	    ProcessWhere(stops);
-	    a:=ReadExpression(stops);
+	    if a=fail then
+	      a:=ReadExpression(stops);
+	    fi;
 	  else
 	    problemarea();
 	    Error("eh!");
@@ -1066,8 +1070,8 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       ExpectToken("(");
       argus:=[];
       while tok[tnum][2]<>")" and tok[tnum][2]<>":" do
-        if tok[tnum][1]="I" or tok[tnum][2]="~" then
-	  if tok[tnum][2]="~" then
+        if tok[tnum][1]="I" or IsAtToken("~") then
+	  if IsAtToken("~") then
 	    ExpectToken("~");
 	    a:=Concatenation("TILDEVAR~",tok[tnum][2]);
 	    Add(argus,a);
@@ -1075,22 +1079,22 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	    Add(argus,tok[tnum][2]);
 	  fi;
 	  tnum:=tnum+1;
-	  if tok[tnum][2]="::" then
+	  if IsAtToken("::") then
 	    ExpectToken("::");
 	    if tok[tnum][1]="I" then
 	      tnum:=tnum+1; # type identifier
-	      if tok[tnum][2]="[" then
+	      if IsAtToken("[") then
 		# list type?
 		ExpectToken("[");
 		ReadExpression(["]"]);
 		ExpectToken("]");
 	      fi;
-	    elif tok[tnum][2]="[" then
+	    elif IsAtToken("[") then
 	      # list type?
 	      ExpectToken("[");
 	      ReadExpression(["]"]);
 	      ExpectToken("]");
-	    elif tok[tnum][2]="{" then
+	    elif IsAtToken("{") then
 	      # set type?
 	      ExpectToken("{");
 	      ReadExpression(["}"]);
@@ -1100,7 +1104,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	      Error("don't understand ::");
 	    fi;
 	  fi;
-	  if tok[tnum][2]="," then 
+	  if IsAtToken(",") then 
 	    tnum:=tnum+1; # multiple
 	  fi;
 	elif tok[tnum][1]="#" then
@@ -1114,7 +1118,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       od;
       assg:=false;
       locopt:=[];
-      if tok[tnum][2]=":" then
+      if IsAtToken(":") then
 	ExpectToken(":");
 	assg:=[];
 	repeat
@@ -1123,7 +1127,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  Add(locopt,a.name);
 	  ExpectToken(":=");
 	  Add(assg,ReadExpression([")",","]));
-	  if tok[tnum][2]="," then
+	  if IsAtToken(",") then
 	    b:=false;
 	    ExpectToken(",");
 	  else
@@ -1140,7 +1144,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       od;
       if tok[tnum]=["O","->"] then
 	ExpectToken("->");
-	if tok[tnum][2]="[" then
+	if IsAtToken("[") then
 	  # to list type
 	  ExpectToken("[");
 	  ReadExpression(["]"]);
@@ -1153,10 +1157,10 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	repeat
 	  a:=Concatenation(a,",",tok[tnum][2]," ");
 	  tnum:=tnum+1;
-          if tok[tnum][2]="," then
+          if IsAtToken(",") then
 	    tnum:=tnum+1;
 	  fi;
-        until tok[tnum][2]="{";
+        until IsAtToken("{");
 	ExpectToken("{");
 	while tok[tnum][2]<>"}" do
 	  Add(a,' ');
@@ -1185,7 +1189,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	od;
 	ExpectToken("}");
       fi;
-      if tok[tnum][2]=";" then
+      if IsAtToken(";") then
 	#spurious ; after function definition
 	tnum:=tnum+1;
       fi;
@@ -1253,7 +1257,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
     yes:=ReadExpression(["else"]);
     ExpectToken("else");
     no:=ReadExpression(Concatenation([";","select"],stops));
-    if tok[tnum][2]="select" then
+    if IsAtToken("select") then
       no:=doselect(no,stops);
     fi;
     return rec(type:="select",cond:=cond,yescase:=yes,nocase:=no);
@@ -1301,7 +1305,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  locals:=Union(locals,b[1]);
 	  a:=rec(type:="if",cond:=a,block:=b[2]);
 	  Add(l,a);
-	  while tok[tnum][2]="elif" do
+	  while IsAtToken("elif") do
 	    ExpectToken("elif");
 	    c:=ReadExpression(["then"]);
 	    ExpectToken("then");
@@ -1310,7 +1314,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	    a.elseblock:=[rec(type:="if",isElif:=true,cond:=c,block:=b[2])];
 	    a:=a.elseblock[1]; # make elif an iterated else if
 	  od;
-	  if tok[tnum][2]="else" then
+	  if IsAtToken("else") then
 	    ExpectToken("else");
 	    b:=ReadBlock(["end if"]:inner);
 	    locals:=Union(locals,b[1]);
@@ -1324,7 +1328,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  locals:=Union(locals,b[1]);
 	  a:=rec(type:="try",block:=b[2]);
 	  Add(l,a);
-	  if tok[tnum][2]="catch err" or tok[tnum][2]="catch e" then
+	  if IsAtToken("catch err") or IsAtToken("catch e") then
 	    ExpectToken(ShallowCopy(tok[tnum][2]));
 	    b:=ReadBlock(["end try"]);
 	    locals:=Union(locals,b[1]);
@@ -1352,7 +1356,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	elif e[2]="for" then
 	  a:=rec(type:="I",name:=tok[tnum][2]);
 	  tnum:=tnum+1;
-	  if tok[tnum][2]="in" then
+	  if IsAtToken("in") then
 	    ExpectToken("in");
 	    c:=ReadExpression(["do"]);
 	  else
@@ -1361,7 +1365,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	    ExpectToken("to");
 	    c:=ReadExpression(["do","by"]);
 	    c:=rec(type:="R",from:=b,to:=c);
-	    if tok[tnum][2]="by" then
+	    if IsAtToken("by") then
 	      ExpectToken("by");
 	      b:=ReadExpression(["do"]);
 	      c.step:=b;
@@ -1403,11 +1407,11 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  a:=[];
 	  while tok[tnum][2]<>";" do
 	    b:=ReadExpression([",",";","select"]);
-	    if tok[tnum][2]="select" then
+	    if IsAtToken("select") then
 	      b:=doselect(b);
 	    fi;
 	    Add(a,b);
-	    if tok[tnum][2]="," then
+	    if IsAtToken(",") then
 	      tnum:=tnum+1;
 	    fi;
 	  od;
@@ -1418,7 +1422,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  if e[2]="vprint" or e[2]="vprintf" then
 	    kind:="Info";
 	    a:=ReadExpression([":",","]);
-	    if tok[tnum][2]="," then
+	    if IsAtToken(",") then
 	      ExpectToken(",");
 	      d:=ReadExpression([":"]);
 	    else
@@ -1436,10 +1440,10 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
           repeat
 	    b:=ReadExpression([",",";"]);
 	    Add(c,b);
-	    if tok[tnum][2]="," then
+	    if IsAtToken(",") then
 	      ExpectToken(",");
 	    fi;
-	  until tok[tnum][2]=";";
+	  until IsAtToken(";");
 
 	  #if tok[tnum][1]="S" then
 	  #  c[1]:=tok[tnum][2];
@@ -1475,7 +1479,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  repeat
 	    a:=ReadExpression([",",";"]);
 	    Add(c,a);
-	    if tok[tnum][2]="," then
+	    if IsAtToken(",") then
 	      ExpectToken(",");
 	    else
 	      a:=fail;
@@ -1502,7 +1506,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  fi;
 	  repeat
 	    a:=ReadExpression([";",",",":"]);
-	    if tok[tnum][2]=":" then
+	    if IsAtToken(":") then
 	      # skip type
 	      ExpectToken(":");
 	      ReadExpression([";",","]);
@@ -1511,10 +1515,10 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	      text:=Concatenation(b," declaration of ",String(a.name))));
             Add(forward,a.name);
 
-            if tok[tnum][2]="," then
+            if IsAtToken(",") then
 	      ExpectToken(",",10);
 	    fi;
-	  until tok[tnum][2]=";";
+	  until IsAtToken(";");
 	  ExpectToken(";",10);
 	elif e[2]="function" or e[2]="intrinsic" or e[2]="procedure" then
 	  tnum:=tnum-1;
@@ -1527,7 +1531,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  repeat
 	    a:=ReadExpression([",",";"]);
 	    Add(c,a);
-	    if tok[tnum][2]="," then
+	    if IsAtToken(",") then
 	      ExpectToken(",");
 	    else
 	      a:=fail;
@@ -1557,7 +1561,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  e:=ReadExpression([":"]); # variable
 	  ExpectToken(":");
 	  c:=[];
-	  while tok[tnum][2]="when" do
+	  while IsAtToken("when") do
 	    ExpectToken("when");
 	    a:=ReadExpression([":"]);
 	    ExpectToken(":");
@@ -1566,7 +1570,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	    Add(c,[a,b[2]]);
 	  od;
 	  a:=rec(type:="case",test:=e,cases:=c);
-	  if tok[tnum][2]="else" then
+	  if IsAtToken("else") then
 	    ExpectToken("else");
 	    b:=ReadBlock(["end case"]);
 	    locals:=Union(locals,b[1]);
@@ -1601,10 +1605,10 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	    if IsBound(e.name) then
 	      AddSet(locals,e.name);
 	    fi;
-	    if tok[tnum][2]="," then
+	    if IsAtToken(",") then
 	      ExpectToken(",","impgen");
 	    fi;
-	  until tok[tnum][2]=">";
+	  until IsAtToken(">");
 	  ExpectToken(">","impgen");
 	  e:=tok[tnum];
 	  tnum:=tnum+1;
@@ -1632,7 +1636,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  # assignment
 	  b:=ReadExpression([",",":=",";","select"]);
 
-	  if tok[tnum][2]="select" then
+	  if IsAtToken("select") then
 	    b:=doselect(b);
 	  fi;
 	  a:=rec(type:="A",left:=a,right:=b);
@@ -1674,7 +1678,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  Error("anders");
 	fi;
       elif e[1]="S" then
-	if tok[tnum][2]="," then
+	if IsAtToken(",") then
 	  # multi-argument warning -- turn into print statement
 	  tok:=Concatenation(tok{[1..tnum-2]},["dummy",["K","print"]],tok{[tnum-1..Length(tok)]});
 	else
