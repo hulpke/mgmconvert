@@ -2089,6 +2089,14 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
     elif t="C" or t="CA" then
       # fct. call
 
+      # is there a SELECT involved?
+      a:=RecursiveFindRec(node.right,
+	    x->IsRecord(x) and IsBound(x.type) and x.type="select");
+      if a<>fail then
+        Error("function call with select");
+      fi;
+      
+
       # do we supress the call based on the argument?
       if IsBound(node.fct.name) and node.fct.name="Matrix" and Length(node.args)=1
         and node.args[1].type="C" and node.args[1].fct.name="SparseMatrix" then
