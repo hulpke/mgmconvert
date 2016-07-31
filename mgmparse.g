@@ -488,6 +488,8 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 
   ProcessWhere:=function(stops)
   local a,b;
+  #Print("stops=",stops,"\n");
+
     ExpectToken("where");
     a:=ReadExpression(["is",":=",","]);
     if IsAtToken(",") then
@@ -930,6 +932,8 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	elif e="~" or e="not" or e="assigned" or e="eval" then
           a:=ReadExpression(Concatenation(stops,["and","or"]));
 	  a:=rec(type:=Concatenation("U",e),arg:=a);
+	elif e="select" then
+	  Error("atselect");
 	else
 	  problemarea();
 	  Error("other unary ",e);
@@ -961,6 +965,9 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	    argus:=[];
 	    while tok[tnum][2]<>")"  and tok[tnum][2]<>":" do
 	      b:=ReadExpression([",",")",":"]);
+	      if IsAtToken("select") then
+		b:=doselect(b,[",",")",":"]);
+	      fi;
 	      Add(argus,b);
 	      if IsAtToken(",") then
 		ExpectToken(",");
@@ -969,12 +976,17 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	    if IsAtToken(":") then
 	      ExpectToken(":");
 	      while tok[tnum][2]<>")" do
-		Add(assg,ReadExpression([":="]));
-		ExpectToken(":=");
-		Add(assg,ReadExpression([")",","]));
+		Add(assg,ReadExpression([":=",")",","]));
+		if IsAtToken(":=") then
+		  ExpectToken(":=");
+		  Add(assg,ReadExpression([")",","]));
+		else
+		  Add(assg,rec(type:="I",name:="true"));
+		fi;
 		if IsAtToken(",") then
 		  ExpectToken(",");
 		fi;
+
 	      od;
 	    fi;
 
@@ -990,15 +1002,22 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  elif e="[" then
 	    # index
 	    tnum:=tnum+1;
-	    b:=ReadExpression(["]",","]);
+	    b:=ReadExpression(["]",",",".."]);
 	    if IsAtToken(",") then
 	      # array indexing -- translate to iterated index by opening a parenthesis and keeping
 	      # position
 	      tok[tnum]:=["O","["];
+	      a:=rec(type:="L",var:=a,at:=b);
+	    elif IsAtToken("..") then
+	      ExpectToken("..");
+	      c:=ReadExpression(["]"]);
+	      b:=rec(type:="R",from:=b,to:=c);
+	      a:=rec(type:="LR",var:=a,at:=b);
+	      ExpectToken("]");
 	    else
 	      ExpectToken("]");
+	      a:=rec(type:="L",var:=a,at:=b);
 	    fi;
-	    a:=rec(type:="L",var:=a,at:=b);
 	  elif e="<" then
 	    pre:=a;
 	    # <> structure
@@ -1035,6 +1054,9 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	      tok:=Concatenation(tok{[1..tnum-1]},tok{[e]},
 	          [["#",Concatenation(List(tok{[tnum..e-1]},x->String(x[2])))]],
 		  tok{[e+1..Length(tok)]});
+	    fi;
+	    if IsAtToken("select") then
+	      c:=doselect(c,stops);
 	    fi;
 	    ExpectToken(">",5);
 	    a:=rec(type:="<>",op:=pre,left:=b,right:=c);
@@ -1149,6 +1171,8 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  ExpectToken("[");
 	  ReadExpression(["]"]);
 	  #ExpectToken("]"); # will be token in comment (instead of variable)
+	elif IsAtToken(".") then
+	  tok[tnum]:=["I","."]; # stupid syntax -- use . like identifier
 	elif tok[tnum][1]<>"I" then
 	  problemarea();
 	  Error("-> unexpected");
@@ -1248,6 +1272,9 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
   doselect:=function(arg)
   local cond,yes,no,stops;
     cond:=arg[1];
+    if IsList(cond) and Length(cond)=1 and IsRecord(cond[1]) then
+      cond:=cond[1];
+    fi;
     if Length(arg)>1 then
       stops:=arg[2];
     else
@@ -1256,7 +1283,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
     ExpectToken("select");
     yes:=ReadExpression(["else"]);
     ExpectToken("else");
-    no:=ReadExpression(Concatenation([";","select"],stops));
+    no:=ReadExpression(Concatenation([";","select",">"],stops));
     if IsAtToken("select") then
       no:=doselect(no,stops);
     fi;
@@ -1299,8 +1326,14 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	# keyword
 
 	if e[2]="if" then
-	  a:=ReadExpression(["then"]);
-	  ExpectToken("then");
+	  a:=ReadExpression(["then",";"]);
+	  if IsAtToken("then") then
+	    ExpectToken("then");
+	  elif IsAtToken(";") then
+	    ExpectToken(";"); # apparently ; instead of then is permitted
+	  else
+	    Error("confused if");
+	  fi;
 	  b:=ReadBlock(["else","end if","elif"]:inner);
 	  locals:=Union(locals,b[1]);
 	  a:=rec(type:="if",cond:=a,block:=b[2]);
@@ -1563,7 +1596,15 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  c:=[];
 	  while IsAtToken("when") do
 	    ExpectToken("when");
-	    a:=ReadExpression([":"]);
+	    a:=ReadExpression([":",","]);
+	    if IsAtToken(",") then
+	      a:=[a];
+	      while IsAtToken(",") do
+		ExpectToken(",");
+		b:=ReadExpression([":",","]);
+		Add(a,b);
+	      od;
+	    fi;
 	    ExpectToken(":");
 	    b:=ReadBlock(["when","end case","else"]);
 	    locals:=Union(locals,b[1]);
@@ -2139,6 +2180,12 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
       FilePrint(f,"[");
       doit(node.at);
       FilePrint(f,"]");
+    elif t="LR" then
+      # list access
+      doit(node.var);
+      FilePrint(f,"{");
+      doit(node.at);
+      FilePrint(f,"}");
 
     elif t="V" then
       FilePrint(f,"[");
@@ -2450,6 +2497,7 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
 	Error("repmult without condition");
 	str2:=List(node.var,x->[]);
       fi;
+
       # list over multiple entities
       for i in [1..Length(node.var)-1] do
 	indent(1);
@@ -2492,22 +2540,22 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
 	fi;
       od;
 
-    elif t="forallmult" or t="existsmult" then
-      if node.varset<>false then
-        doit(node.varset);
-	FilePrint(f,":=");
-      fi;
-      if t="forall" then
-	FilePrint(f,"ForAll(");
-      else
-	FilePrint(f,"ForAny(");
-      fi;
-      doit(node.from);
-      FilePrint(f,",");
-      doit(node.var);
-      FilePrint(f,"->");
-      doit(node.cond);
-      FilePrint(f,")");
+#    elif t="forallmult" or t="existsmult" then
+#      if node.varset<>false then
+#        doit(node.varset);
+#	FilePrint(f,":=");
+#      fi;
+#      if t="forall" then
+#	FilePrint(f,"ForAll(");
+#      else
+#	FilePrint(f,"ForAny(");
+#      fi;
+#      doit(node.from);
+#      FilePrint(f,",");
+#      doit(node.var);
+#      FilePrint(f,"->");
+#      doit(node.cond);
+#      FilePrint(f,")");
 
     elif t="forall" or t="exists" then
       if node.varset<>false then
@@ -2528,8 +2576,12 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
 	  FilePrint(f,node.var.name[i]); # the way its constructed a silly wrapper
 	  FilePrint(f,"->");
 	od;
-	if Length(node.cond)>1 then Error("multicond");fi;
-	doit(node.cond[1]);
+	if IsList(node.cond) then
+	  if Length(node.cond)>1 then Error("multicond");fi;
+	  doit(node.cond[1]);
+	else
+	  doit(node.cond);
+	fi;
         for i in [1..Length(node.from)] do
 	  indent(-1);
 	  FilePrint(f,")");
@@ -2599,14 +2651,26 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
 	  Unbind(node.isElif); # no special elif treatment --must be included if.
 	fi;
 	# implicit assignment in `if' condition
+
 	doit(node.cond.varset);
-	FilePrint(f,":=First(");
-	doit(node.cond.from);
-	FilePrint(f,",");
-	doit(node.cond.var);
-	FilePrint(f,"->");
-	doit(node.cond.cond);
-	FilePrint(f,");\n",START);
+	FilePrint(f,":=");
+	if IsList(node.cond.from) then
+	  # this exists with assignment is really the assignment being a
+	  # repmult.
+	  i:=ShallowCopy(node.cond);
+	  i.type:="repmult";
+	  i.var:=i.var.name;
+	  doit(i);
+	  FilePrint(f,";\n",START);
+	else
+	  FilePrint(f,"First(");
+	  doit(node.cond.from);
+	  FilePrint(f,",");
+	  doit(node.cond.var);
+	  FilePrint(f,"->");
+	  doit(node.cond.cond);
+	  FilePrint(f,");\n",START);
+	fi;
 
 	FilePrint(f,"if ");
 	doit(node.cond.varset);
@@ -2701,9 +2765,20 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
 	  FilePrint(f,"\b\bel");
 	fi;
 	FilePrint(f,"if ");
-	doit(node.test);
-	FilePrint(f,"=");
-	doit(node.cases[i][1]);
+	if IsRecord(node.cases[i][1]) then
+	  doit(node.test);
+	  FilePrint(f,"=");
+	  doit(node.cases[i][1]);
+	else
+	  for a in [1..Length(node.cases[i][1])] do
+	    if a>1 then
+	      FilePrint(f," or ");
+	    fi;
+	    doit(node.test);
+	    FilePrint(f,"=");
+	    doit(node.cases[i][1][a]);
+	  od;
+	fi;
 	indent(1);
 	FilePrint(f," then\n",START);
 	for b in node.cases[i][2] do
@@ -2985,3 +3060,11 @@ local a,b,c,d,f,l,i,j,r,uses,defs,import,depend,order;
   return List(l,x->[x.filename,List(l{Filtered(x.dependall,IsInt)},y->y.filename)]);
   #return a;
 end;
+
+PathnamesMagmaFiles:=function(path)
+local d;
+  d:=DirectoryContents(path);
+  d:=Filtered(d,x->Length(x)>2 and x{[Length(x)-1,Length(x)]}=".m");
+  return List(d,x->Concatenation(path,"/",x));
+end;
+
