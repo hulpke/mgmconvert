@@ -384,9 +384,13 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       if a="end" or a="declare" or a="catch" or (a="error" and l{[1..2]}="if") then
         # special case of `end' token -- blank in name
 	i:=1;
-	while l[i] in CHARSIDS do
+	while l[i] in CHARSIDS and i<Length(l) do
 	  i:=i+1;
 	od;
+	if i=Length(l) and l[i] in CHARSIDS then
+	  Add(l,' ');
+	  i:=i+1;
+	fi;
 	a:=Concatenation(a," ",l{[1..i-1]});
 	l:=l{[i..Length(l)]};eatblank();
 	i:=Position(TOKENS,a);
@@ -1219,7 +1223,13 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       fi;
 
       a:=ReadBlock(["end function","end intrinsic","end procedure"]:inner);
-      tnum:=tnum+1; # do end .... token
+      if tok[tnum][2]="end intrinsic" 
+        and (tnum=Length(tok) or tok[tnum+1][2]<>";") then
+	# end intrinsic w/o ;
+        tok[tnum]:=[ "O", ";" ];
+      else
+	tnum:=tnum+1; # do end .... token
+      fi;
 
       a:=rec(type:="F",args:=argus,locals:=Union(a[1],locopt),block:=a[2]);
       if Length(fcomment)>0 then
@@ -2130,12 +2140,12 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
     elif t="C" or t="CA" then
       # fct. call
 
-      # is there a SELECT involved?
-      a:=RecursiveFindRec(node.right,
-	    x->IsRecord(x) and IsBound(x.type) and x.type="select");
-      if a<>fail then
-        Error("function call with select");
-      fi;
+      # # is there a SELECT involved?
+      # a:=RecursiveFindRec(node.right,
+#	    x->IsRecord(x) and IsBound(x.type) and x.type="select");
+#      if a<>fail then
+#        Error("function call with select");
+#      fi;
       
 
       # do we supress the call based on the argument?
