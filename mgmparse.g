@@ -879,8 +879,12 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       elif e="rep" then
         ExpectToken("rep");
 	a:=procidf();
-	# make it rep or repmult
-	a.type:=Concatenation("rep",a.type{[2..Length(a.type)]});
+	if a.type=":F" then
+	  a.type:=":1"; # First
+	else
+	  # make it rep or repmult
+	  a.type:=Concatenation("rep",a.type{[2..Length(a.type)]});
+	fi;
       elif e="hom" or e="map" then
         tnum:=tnum+1; #ExpectToken("hom");
         ExpectToken("<","hom");
@@ -2608,7 +2612,7 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
       fi;
 
     elif t=":F" then
-      # is it a List(Filtered construct ?
+      # is it a List/Filtered construct ?
       str1:=node.op.type<>"I" or node.op.name<>node.var;
       if str1 then
 	FilePrint(f,"List(");
@@ -2624,6 +2628,14 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
 	doit(node.op);
 	FilePrint(f,")");
       fi;
+
+    elif t=":1" then
+      FilePrint(f,"First(");
+      doit(node.from);
+      FilePrint(f,",",node.var,"->");
+      doit(node.cond);
+      FilePrint(f,")");
+
     elif t="&" then
       if node.op="+" then
         FilePrint(f,"Sum(");
