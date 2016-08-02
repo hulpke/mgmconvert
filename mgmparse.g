@@ -1314,7 +1314,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       if Length(cmdstack)>0 then
 	if Length(l)=0 then Error("where what of?");
 	else
-         for e in Reversed(cmdstack) do
+         for e in cmdstack do
 	   # move item before last listed command
 	   Add(l,l[Length(l)]);
 	   l[Length(l)-1]:=rec(type:="wh",assg:=e);
