@@ -1208,6 +1208,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       elif tok[tnum]=["O","{"] then
 	ExpectToken("{");
         #fcomment:="";
+	a:="";
 	while tok[tnum][2]<>"}" do
 	  if Length(fcomment)>0 then
 	    Add(fcomment,' ');
@@ -1304,8 +1305,25 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
     return rec(type:="select",cond:=cond,yescase:=yes,nocase:=no);
   end;
 
+
   ReadBlock:=function(endkey)
-  local l,e,a,aif,b,c,d,f,locals,kind,i;
+  local l,e,a,aif,b,c,d,f,locals,kind,i,CleanoutWhere;
+
+    CleanoutWhere:=function()
+    local e;
+      if Length(cmdstack)>0 then
+	if Length(l)=0 then Error("where what of?");
+	else
+         for e in Reversed(cmdstack) do
+	   # move item before last listed command
+	   Add(l,l[Length(l)]);
+	   l[Length(l)-1]:=rec(type:="wh",assg:=e);
+	 od;
+	 cmdstack:=[];
+	fi;
+      fi;
+    end;
+
     l:=[];
     locals:=[];
 
@@ -1316,13 +1334,6 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  Add(l,rec(type:="co",text:=e[2]));
 	od;
 	costack:=[];
-      fi;
-      if Length(cmdstack)>0 then
-         for e in cmdstack do
-	   Add(l,rec(type:="co",text:="POSTPONED `where'"));
-	   Add(l,e);
-	 od;
-	 cmdstack:=[];
       fi;
 
       e:=tok[tnum];
@@ -1336,6 +1347,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 
       if e[1]="#" then
 	Add(l,rec(type:="co",text:=e[2]));
+        CleanoutWhere();
       elif e[1]="K" then
 	# keyword
 
@@ -1369,6 +1381,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  fi;
 	  ExpectToken("end if");
 	  ExpectToken(";",1);
+	  CleanoutWhere();
 
 	elif e[2]="try" then
 	  b:=ReadBlock(["catch err","catch e","end try"]:inner);
@@ -1383,6 +1396,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  fi;
 	  ExpectToken("end try");
 	  ExpectToken(";",1);
+	  CleanoutWhere();
  
 	elif e[2]="error if" then
 	  a:=ReadExpression([","]);
@@ -1390,6 +1404,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  b:=ReadExpression([";"]);
 	  ExpectToken(";");
 	  Add(l,rec(type:="if",cond:=a,block:=[rec(type:="Print",values:=[b])]));
+	  CleanoutWhere();
 
 	elif e[2]="while" then
 	  a:=ReadExpression(["do"]);
@@ -1400,6 +1415,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  ExpectToken("end while");
 	  ExpectToken(";",2);
 	  Add(l,a);
+	  CleanoutWhere();
 	elif e[2]="for" then
 	  a:=rec(type:="I",name:=tok[tnum][2]);
 	  tnum:=tnum+1;
@@ -1428,12 +1444,14 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  ExpectToken("end for");
 	  ExpectToken(";",3);
 	  Add(l,a);
+	  CleanoutWhere();
 
 	elif e[2]="assert" then
 	  a:=ReadExpression([";"]);
 	  ExpectToken(";",4);
 	  a:=rec(type:="assert",cond:=a);
 	  Add(l,a);
+	  CleanoutWhere();
         elif e[2]="require" then
 	  a:=ReadExpression([":"]);
 	  ExpectToken(":");
@@ -1441,6 +1459,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  ExpectToken(";","4b");
 	  a:=rec(type:="require",cond:=a,mess:=c);
 	  Add(l,a);
+	  CleanoutWhere();
 	elif e[2]="repeat" then
 	  b:=ReadBlock(["until"]);
 	  ExpectToken("until");
@@ -1449,6 +1468,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  a:=rec(type:="repeat",cond:=a,block:=b[2]);
 	  Add(l,a);
 	  ExpectToken(";",5);
+	  CleanoutWhere();
 
 	elif e[2]="return" then
 	  a:=[];
@@ -1464,6 +1484,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  od;
 	  ExpectToken(";",6);
 	  Add(l,rec(type:="return",values:=a));
+	  CleanoutWhere();
 	elif e[2]="vprint" or e[2]="error" or e[2]="print" or e[2]="printf"
 	  or e[2]="vprintf" then
 	  if e[2]="vprint" or e[2]="vprintf" then
@@ -1512,10 +1533,12 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  a:=rec(type:=kind,class:=a,values:=c);
 	  if kind="Info" then a.level:=d;fi;
 	  Add(l,a);
+	  CleanoutWhere();
 
         elif e[2]="continue" then
 	  ExpectToken(";",-8);
 	  Add(l,rec(type:="continue"));
+	  CleanoutWhere();
 	elif e[2]="freeze" then
 	  ExpectToken(";",8);
 	elif e[2]="import" then
@@ -1545,6 +1568,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  #Add(l,rec(type:="co",text:=b));
 
 	  ExpectToken(";",9);
+	  CleanoutWhere();
 	elif e[2]="forward" or e[2]="declare verbose"
 	  or e[2]="declare attributes" then
 	  if e[2]="forward" then b:="Forward";
@@ -1567,6 +1591,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	    fi;
 	  until IsAtToken(";");
 	  ExpectToken(";",10);
+	  CleanoutWhere();
 	elif e[2]="function" or e[2]="intrinsic" or e[2]="procedure" then
 	  tnum:=tnum-1;
 	  # rewrite: function Bla 
@@ -1599,10 +1624,12 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  od;
 	  Add(l,rec(type:="delete",del:=b));
 	  ExpectToken(";",11/2);
+	  CleanoutWhere();
 	elif e[2]="break" then
 	  a:=ReadExpression([";"]);
 	  Add(l,rec(type:="break",var:=a));
 	  ExpectToken(";",11/3);
+	  CleanoutWhere();
 
 	elif e[2]="case" then
 	  e:=ReadExpression([":"]); # variable
@@ -1633,6 +1660,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  fi;
 	  ExpectToken("end case");
 	  Add(l,a);
+	  CleanoutWhere();
 	else
 	  problemarea();
 	  Error("other keyword ",e);
@@ -1700,6 +1728,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  fi;
 	  Add(l,a);
 	  ExpectToken(";",14);
+	  CleanoutWhere();
 	  if endkey=false and IsBound(a.left.name) then
 	    # top-level assignment -- global variable
 	    #Print("> ",a.left.name," <\n");
@@ -1709,25 +1738,31 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  b:=ReadExpression([";"]);
 	  ExpectToken(";",15);
 	  Add(l,rec(type:="A-",left:=a,right:=b));
+	  CleanoutWhere();
 	elif e[2]="+:=" then
 	  b:=ReadExpression([";"]);
 	  ExpectToken(";",16);
 	  Add(l,rec(type:="A+",left:=a,right:=b));
+	  CleanoutWhere();
 	elif e[2]="*:=" then
 	  b:=ReadExpression([";"]);
 	  ExpectToken(";");
 	  Add(l,rec(type:="A*",left:=a,right:=b));
+	  CleanoutWhere();
 	elif e[2]="/:=" then
 	  b:=ReadExpression([";"]);
 	  ExpectToken(";");
 	  Add(l,rec(type:="A/",left:=a,right:=b));
+	  CleanoutWhere();
 	elif e[2]="cat:=" then
 	  b:=ReadExpression([";"]);
 	  ExpectToken(";");
 	  Add(l,rec(type:="Acat",left:=a,right:=b));
+	  CleanoutWhere();
 	elif e[2]=";" then
 	  a.line:=true; # only command in line
 	  Add(l,a);
+	  CleanoutWhere();
 	else
 	  problemarea();
 	  Error("anders");
@@ -2926,6 +2961,9 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
     elif t="none" then
       #Error("UUU");
       FilePrint(f,"#NOP\n",START);
+    elif t="wh" then
+      FilePrint(f,"# FOLLOWING COMMAND IS `WHERE` \n",START);
+      doit(node.assg);
     else
       Error("NEED TO DO  type ",t," ");
       #Error("type ",t," not yet done");
