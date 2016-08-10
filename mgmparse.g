@@ -23,7 +23,8 @@ TOKENS:=["if","then","eq","cmpeq","neq","and","or","else","not","assigned",
 	 "catch err","catch e",
 	 "declare verbose","declare attributes","error if",
 	 "exists","forall","time","rep",
-	 "sub","eval","select","rec","recformat","require","case","when","end case",
+	 "sub","ext","quo",
+	 "eval","select","rec","recformat","require","case","when","end case",
 	 "^^", "adj", "is", "non", "notadj", "notsubset", "sdiff", "xor",
 	 "%%%" # fake keyword for comments
 	 ];
@@ -204,7 +205,7 @@ MgmParse:=function(file)
 local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       ExpectToken,doselect,costack,locals,globvars,globimp,defines,problemarea,
       f,l,lines,linum,w,a,idslist,tok,tnum,i,sel,osel,e,comment,forward,
-      thisfctname,cmdstack,ProcessWhere,IsAtToken;
+      thisfctname,cmdstack,ProcessWhere,IsAtToken,ReadOptions;
 
   locals:=[];
   globvars:=[];
@@ -511,6 +512,25 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
     Add(cmdstack,b);
   end;
 
+  ReadOptions:=function(stops)
+  local opts,a,b;
+    ExpectToken(":");
+    opts:=[];
+    repeat
+      a:=ReadExpression(Concatenation([":=",","],stops));
+      if IsAtToken(":=") then
+	ExpectToken(":=");
+	b:=ReadExpression(Concatenation([","],stops));
+	a:=rec(type:="A",left:=a,right:=b);
+      fi;
+      Add(opts,a);
+      if IsAtToken(",") then
+        ExpectToken(",");
+      fi;
+    until tok[tnum][2] in stops;
+    return opts;
+  end;
+
   # read identifier, call, function 
   ReadExpression:=function(stops)
   local obj,e,a,b,c,argus,procidf,doprocidf,op,assg,val,pre,lbinops,
@@ -807,22 +827,51 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 #  a:=rec(type:="{",args:=l);
 #fi;
 
-      elif e="sub" then
-	# substructure
-	ExpectToken("sub");
+      elif e="sub" or e="ext" then
+	# substructure/extension
+	ExpectToken(e);
 	ExpectToken("<");
-	e:=ReadExpression(["|"]);
+	assg:=ReadExpression(["|"]);
 	ExpectToken("|");
 	l:=[];
+	d:=fail;
 	repeat
 	  if IsAtToken(",") then
 	    ExpectToken(",");
 	  fi;
-	  a:=ReadExpression([">",","]);
+	  a:=ReadExpression([">",",",":"]);
 	  Add(l,a);
+	  if IsAtToken(":") then
+	    d:=ReadOptions([">"]);
+	  fi;
 	until IsAtToken(">");
 	ExpectToken(">",2);
-	a:=rec(type:="sub",within:=e,span:=l);
+	a:=rec(type:=e,within:=assg,span:=l);
+	if d<>fail then
+	  a.options:=d;
+	fi;
+      elif e="quo" then
+        # quotient
+	ExpectToken("quo");
+	ExpectToken("<");
+	a:=ReadExpression([":","|"]);
+	if IsAtToken(":") then
+	  ExpectToken(":");
+	  b:=ReadExpression(["|"]);
+	  a:=rec(type:="quo",format:=a,nominator:=b);
+	else
+	  a:=rec(type:="quo",nominator:=a);
+	fi;
+	ExpectToken("|");
+	b:=ReadExpression([">",":"]);
+	a.denominator:=b;
+
+	if IsAtToken(":") then
+	  d:=ReadOptions([">"]);
+	  a.options:=d;
+	fi;
+	ExpectToken(">",-2);
+
       elif e="recformat" then
 	ExpectToken("recformat");
 	ExpectToken("<");
@@ -893,7 +942,13 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	b:=ReadExpression(["|"]);
 	ExpectToken("|");
 	a:=rec(type:=e,domain:=a,codomain:=b);
-	c:=ReadExpression([":->",">",","]);
+	c:=ReadExpression([":->",">",",",":"]);
+	if IsAtToken(":") then
+	  # option
+	  assg:=ReadOptions([":->",">",","]);
+	  a.options:=assg;
+	fi;
+
 	if IsAtToken(">") then
 	  # image defn
 	  a.kind:="images";
@@ -1866,7 +1921,8 @@ local l,i;
 end;
 
 GAPOutput:=function(l,f)
-local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unravel;
+local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
+  unravel,CloseParenthesisOptions;
 
    sz:=SizeScreen();
    SizeScreen([LINEWIDTH+2,sz[2]]);
@@ -1967,6 +2023,28 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
     else
       FilePrint(f,"\n",START);
     fi;
+  end;
+
+  CloseParenthesisOptions:=function(node)
+  local i;
+    if IsBound(node.options) then
+      FilePrint(f,":");
+      for i in [1..Length(node.options)] do
+        if i>1 then
+	  FilePrint(f,",");
+	fi;
+	if node.options[i].type="I" then
+	  doit(node.options[i]);
+	elif node.options[i].type="A" then
+	  doit(node.options[i].left);
+	  FilePrint(f,":=");
+	  doit(node.options[i].right);
+        else
+	  Error("strange option type");
+	fi;
+      od;
+    fi;
+    FilePrint(f,")");
   end;
 
   # doit -- main node processor
@@ -2853,8 +2931,12 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
 	indent(-1);
       fi;
       FilePrint(f,"\b\bfi;\n",START);
-    elif t="sub" then
-      FilePrint(f,"SubStructure(");
+    elif t="sub" or t="ext" then
+      if t="sub" then
+	FilePrint(f,"SubStructure(");
+      else
+	FilePrint(f,"ExtStructure(");
+      fi;
       doit(node.within);
       FilePrint(f,",");
       for i in [1..Length(node.span)] do
@@ -2866,9 +2948,23 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
 
 	doit(node.span[i]);
       od;
-      FilePrint(f,")");
-
-
+      CloseParenthesisOptions(node);
+      #FilePrint(f,")");
+    elif t="quo" then
+      FilePrint(f,"\n",START,"# QUOTIENT\n",START);
+      if IsBound(node.format) then
+	FilePrint(f,"# FORMAT ");
+	doit(node.format);
+	FilePrint(f,"\n",START);
+      fi;
+      doit(node.nominator);
+      FilePrint(f,"/");
+      doit(node.denominator);
+      if IsBound(node.options) then
+	FilePrint(f," # OPTIONS ");
+        CloseParenthesisOptions(node);
+	FilePrint(f,"\n",START);
+      fi;
     elif t="assert" then
       FilePrint(f,"Assert(1,");
       doit(node.cond);
@@ -2908,8 +3004,6 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
 	doit(node.domain);
 	FilePrint(f,"),");
 	doit(node.images);
-	FilePrint(f,")");
-	indent(-1);
       elif node.kind="genimg" then
         FilePrint(f,"Group",t,"ByImages(");
 	doit(node.domain);
@@ -2920,8 +3014,6 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
 	doit(node.gens);
 	FilePrint(f,",");
 	doit(node.images);
-	FilePrint(f,")");
-	indent(-1);
 
       elif node.kind="fct" then
         FilePrint(f,"Group",t,"ByFunction(");
@@ -2933,11 +3025,11 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,unrav
 	doit(node.var);
 	FilePrint(f,"->");
 	doit(node.expr);
-	FilePrint(f,")");
-	indent(-1);
       else
         Error("unknown kind ",node.kind);
       fi;
+      CloseParenthesisOptions(node);
+      indent(-1);
 
     elif t="error" then
       FilePrint(f,"Error(");
