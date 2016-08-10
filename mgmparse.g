@@ -1,5 +1,5 @@
 # Magma to GAP converter
-MGMCONVER:="version 0.43, 4/04/16"; # version number
+MGMCONVER:="version 0.45, 8/10/16"; # version number
 # (C) Alexander Hulpke
 
 LINEWIDTH:=80;
