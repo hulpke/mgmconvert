@@ -98,6 +98,7 @@ GAP_KEYWORDS:=[
 
 # add those which are global functions
 GAP_RESERVED:=Union(GAP_KEYWORDS,[ "E","X","Z"]);
+GAP_SYSVARS:=Difference(NamesSystemGVars(),GAP_RESERVED);
 
 # parses to the following units:
 
@@ -1922,7 +1923,7 @@ end;
 
 GAPOutput:=function(l,f)
 local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
-  unravel,CloseParenthesisOptions;
+  unravel,CloseParenthesisOptions,localsstack;
 
    sz:=SizeScreen();
    SizeScreen([LINEWIDTH+2,sz[2]]);
@@ -1953,6 +1954,9 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
        s:=Concatenation(s,"@");
      elif s in GAP_RESERVED then
        s:=Concatenation("var",s);
+     elif s in GAP_SYSVARS and ForAny(localsstack,x->s in x) then
+       # local variable overriding GAP global system function
+       s:=Concatenation("lvar",s);
      fi;
      return s;
    end;
@@ -2046,6 +2050,8 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
     fi;
     FilePrint(f,")");
   end;
+
+  localsstack:=[]; # stack holding current local variables
 
   # doit -- main node processor
   doit:=function(node)
@@ -2223,8 +2229,12 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
       if Length(node.locals)>0 then
         FilePrint(f,"local ");
 	printlist(node.locals);
+	i:=node.locals;
 	FilePrint(f,";\n",START);
+      else
+	i:=[];
       fi;
+      localsstack:=Concatenation([i],localsstack);
       if t="FA" then
 	for i in [1,3..Length(node.assg)-1] do
 	  doit(node.assg[i]);
@@ -2247,6 +2257,7 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
       indent(-1);
       FilePrint(f,"\b\b");
       FilePrint(f,"end");
+      localsstack:=localsstack{[2..Length(localsstack)]};
       if ValueOption("ininstall")=fail then
 	FilePrint(f,";\n",START);
       fi;
@@ -3055,6 +3066,12 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
       FilePrint(f,"#NOP\n",START);
     elif t="wh" then
       FilePrint(f,"# FOLLOWING COMMAND IS `WHERE` \n",START);
+      i:=node.assg.left;
+      if not IsList(i) then i:=[i];fi;
+      i:=Filtered(i,x->ForAny(localsstack,y->x in y));
+      if Length(i)>0 then
+	Error("where is overwriting locals -- TODO");
+      fi;
       doit(node.assg);
     else
       Error("NEED TO DO  type ",t," ");
