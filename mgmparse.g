@@ -864,14 +864,27 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  a:=rec(type:="quo",nominator:=a);
 	fi;
 	ExpectToken("|");
-	b:=ReadExpression([">",":"]);
-	a.denominator:=b;
+	b:=ReadExpression([",",">",":"]);
+        if IsAtToken(",") then
+          # list of relators/equations
+          d:=[b];
+          repeat 
+            ExpectToken(",");
+            b:=ReadExpression([",",">"]);
+            Add(d,b);
+          until IsAtToken(">");
+          ExpectToken(">");
+          a.type:="quofp";
+          a.denominator:=d;
+        else
+          a.denominator:=b;
 
-	if IsAtToken(":") then
-	  d:=ReadOptions([">"]);
-	  a.options:=d;
-	fi;
-	ExpectToken(">",-2);
+          if IsAtToken(":") then
+            d:=ReadOptions([">"]);
+            a.options:=d;
+          fi;
+          ExpectToken(">",-2);
+        fi;
 
       elif e="recformat" then
 	ExpectToken("recformat");
@@ -2976,6 +2989,34 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
         CloseParenthesisOptions(node);
 	FilePrint(f,"\n",START);
       fi;
+    elif t="quofp" then
+      # finitely presented group
+      doit(node.nominator);
+      FilePrint(f,"/[");
+      indent(1);
+      str1:=false;
+      for i in node.denominator do
+        if str1 then FilePrint(f,",\n",START);fi;
+        str1:=true;
+        if i.type="B=" then
+          # relation
+          doit(i.left);
+          FilePrint(f,"/");
+          if i.right.type[1]='B' then
+            # binary operation, neds parentheses
+            FilePrint(f,"(");
+            doit(i.right);
+            FilePrint(f,")");
+          else
+            doit(i.right);
+          fi;
+        else
+          # relator
+          doit(i);
+        fi;
+      od;
+      indent(-1);
+      FilePrint(f,"]");
     elif t="assert" then
       FilePrint(f,"Assert(1,");
       doit(node.cond);
