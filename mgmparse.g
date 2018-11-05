@@ -1,5 +1,5 @@
 # Magma to GAP converter
-MGMCONVER:="version 0.45, 8/10/16"; # version number
+MGMCONVER:="version 0.5, 11/5/18"; # version number
 # (C) Alexander Hulpke
 
 LINEWIDTH:=80;
@@ -206,7 +206,7 @@ MgmParse:=function(file)
 local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       ExpectToken,doselect,costack,locals,globvars,globimp,defines,problemarea,
       f,l,lines,linum,w,a,idslist,tok,tnum,i,sel,osel,e,comment,forward,
-      thisfctname,cmdstack,ProcessWhere,IsAtToken,ReadOptions;
+      thisfctname,cmdstack,ProcessWhere,IsAtToken,ReadOptions,makeprintlistnice;
 
   locals:=[];
   globvars:=[];
@@ -975,12 +975,15 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  a.var:=c;
 	  a.expr:=d;
 	elif IsAtToken(",") then
-	  # gens, imgs
+	  # generator images
 	  a.kind:="genimg";
-	  a.gens:=c;
-	  ExpectToken(",");
-	  d:=ReadExpression([">"]);
-	  a.images:=d;
+          c:=[c];
+          while IsAtToken(",") do
+            ExpectToken(",");
+            d:=ReadExpression([",",">"]);
+            Add(c,d);
+          od;
+	  a.images:=c;
 	else
 	  problemarea();
 	  Error(tok[tnum][2], " not yet done");
@@ -1372,6 +1375,21 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       no:=doselect(no,stops);
     fi;
     return rec(type:="select",cond:=cond,yescase:=yes,nocase:=no);
+  end;
+
+  makeprintlistnice:=function(b)
+  local i;
+    # insert blanks between arguments
+    i:=2;
+    while i<=Length(b) do
+      if IsRecord(b[i]) and b[i].type="I" 
+          and IsRecord(b[i-1]) and b[i-1].type="I" then
+        b:=Concatenation(b{[1..i-1]},[" "],b{[i..Length(b)]});
+      fi;
+      i:=i+1;
+    od;
+    Add(b,"\\n"); # newline, just keep in GAP format is fine
+    return b;
   end;
 
 
@@ -1771,19 +1789,24 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	if e[2]="," then 
 	  b:=[a];
 	  while e[2]="," do
-	    a:=ReadExpression([",",":="]);
+	    a:=ReadExpression([",",":=",";"]);
 	    Add(b,a);
 	    e:=tok[tnum];
 	    tnum:=tnum+1;
 	  od;
-	  a:=ReadExpression([";"]);
-	  Add(l,rec(type:="Amult",left:=b,right:=a));
-	  for a in b do
-	    if a.type="I" then
-	      AddSet(locals,a.name);
-	    fi;
-	  od;
-	  ExpectToken(";",13);
+          if e[2]=";" then
+
+            Add(l,rec(type:="Print",values:=makeprintlistnice(b)));
+          else
+            a:=ReadExpression([";"]);
+            Add(l,rec(type:="Amult",left:=b,right:=a));
+            for a in b do
+              if a.type="I" then
+                AddSet(locals,a.name);
+              fi;
+            od;
+            ExpectToken(";",13);
+          fi;
 	elif e[2]=":=" then
 	  # assignment
 	  b:=ReadExpression([",",":=",";","select"]);
@@ -1837,14 +1860,15 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  Error("anders");
 	fi;
       elif e[1]="S" then
-	if IsAtToken(",") then
-	  # multi-argument warning -- turn into print statement
-	  tok:=Concatenation(tok{[1..tnum-2]},["dummy",["K","print"]],tok{[tnum-1..Length(tok)]});
-	else
-	  # string, print warning
-	  Add(l,rec(type:="W",text:=e[2]));
-	  ExpectToken(";",20);
-	fi;
+        # print statement without print (but starting with string) 
+        b:=[e[2]];
+        while IsAtToken(",") do
+          ExpectToken(",");
+          a:=ReadExpression([",",";"]);
+          Add(b,a);
+        od;
+        Add(l,rec(type:="Print",values:=makeprintlistnice(b)));
+        ExpectToken(";",20);
       elif e[2]=";" then
 	# empty command?
       else 
@@ -2072,8 +2096,8 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
     t:=node.type;
     if t="A" then
       # special case of declaration assignment
-      if IsBound(node.left.type) and node.left.type="I" and node.left.name
-	in declared then
+      if IsBound(node.left.type) and node.left.type="I" 
+        and node.left.name in declared then
 	FilePrint(f,"InstallGlobalFunction(");
 	doit(node.left);
 	FilePrint(f,",\n",START);
@@ -2104,7 +2128,13 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
 	  doit(node.left);
 	  FilePrint(f,":=");
 	  doit(node.right);
-	  FilePrint(f,";\n",START);
+          if IsBound(node.right.type) and 
+            (node.right.type="F" or node.right.type="FA") then
+            # extra blank line after function assignment
+            FilePrint(f,";\n\n",START);
+          else
+            FilePrint(f,";\n",START);
+          fi;
 	fi;
       fi;
 
@@ -2271,9 +2301,9 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
       FilePrint(f,"\b\b");
       FilePrint(f,"end");
       localsstack:=localsstack{[2..Length(localsstack)]};
-      if ValueOption("ininstall")=fail then
-	FilePrint(f,";\n",START);
-      fi;
+#      if ValueOption("ininstall")=fail then
+#	FilePrint(f,";\n",START);
+#      fi;
     elif t="S" then
       FilePrint(f,"\"");
       FilePrint(f,node.name);
@@ -3063,9 +3093,11 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
 	doit(node.codomain);
 	indent(1);
 	FilePrint(f,",\n",START);
-	doit(node.gens);
-	FilePrint(f,",");
-	doit(node.images);
+        FilePrint(f,"GeneratorsOfGroup(");
+	doit(node.domain);
+	FilePrint(f,"),\n",START,"[");
+	printlist(node.images);
+        FilePrint(f,"]");
 
       elif node.kind="fct" then
         FilePrint(f,"Group",t,"ByFunction(");
