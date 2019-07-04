@@ -1,5 +1,5 @@
 # Magma to GAP converter
-MGMCONVER:="version 0.5, 11/5/18"; # version number
+MGMCONVER:="version 0.51, Jul/4/19"; # version number
 # (C) Alexander Hulpke
 
 LINEWIDTH:=80;
@@ -56,6 +56,7 @@ TOKENS:=Union(TOKENS,PAROP);
 
 # translation list for global function names
 TRANSLATE:=[
+"Append","Add",
 "Alt","AlternatingGroup",
 "CompanionMatrix","CompanionMat",
 "Determinant","DeterminantMat",
@@ -584,7 +585,8 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	  if IsAtToken(")") and tok[tnum+1][2]<>"(" then
 	    # pair
 	    ExpectToken(")");
-	    a:=rec(type:="pair",left:=a,right:=b);
+	    #a:=rec(type:="pair",left:=a,right:=b);
+	    a:=rec(type:="commutator",left:=a,right:=b);
 	    return a;
 	  else
 	    # permutation
@@ -1971,10 +1973,6 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
      Add(tralala[1],Immutable(TRANSLATE[i]));
      Add(tralala[2],Immutable(TRANSLATE[i+1]));
    od;
-   if ValueOption("carefree")=true then
-     Add(tralala[1],Immutable("Append"));
-     Add(tralala[2],Immutable("Add"));
-   fi;
    SortParallel(tralala[1],tralala[2]);
 
    START:="";
@@ -2335,8 +2333,13 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
 	  doit(node.fct);
 	fi;
 
+
 	FilePrint(f,"(");
-	printlist(node.args);
+        if node.fct.name="Append" then 
+          printlist(node.args:NOTILDE);
+        else
+          printlist(node.args);
+        fi;
 	if t="CA" then
 	  FilePrint(f,":");
 	  for i in [1,3..Length(node.assg)-1] do
@@ -2415,6 +2418,12 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
       FilePrint(f,"..");
       doit(node.to);
       FilePrint(f,"]");
+    elif t="commutator" then
+      FilePrint(f,"Comm(");
+      doit(node.left);
+      FilePrint(f,",");
+      doit(node.right);
+      FilePrint(f,")");
     elif t="pair" then
       FilePrint(f,"Tuple([");
       doit(node.left);
@@ -2544,7 +2553,7 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
       FilePrint(f,"-");
       doit(node.arg);
     elif t="U~" then
-      if ValueOption("carefree")<>true then
+      if ValueOption("carefree")<>true and ValueOption("NOTILDE")<>true then
 	FilePrint(f,"TILDE");
       fi;
       doit(node.arg);
