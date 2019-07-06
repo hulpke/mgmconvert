@@ -741,7 +741,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	    b:=ReadExpression(["}"]);
             ExpectToken("}");
             a:=rec(type:="SL",var:=a,at:=b);
-	  elif e="[" then
+	  elif e="[" or e="![" then
 	    # index
 	    tnum:=tnum+1;
 	    b:=ReadExpression(["]",",",".."]);
@@ -981,7 +981,7 @@ local list,recurse,b;
       od;
     elif n.type="paren" or n.type[1]='U' then
       l:=recurse(n.arg,ignore);
-    elif n.type="C" then
+    elif n.type="C" or n.type="CA" then
       l:=Union(l,recurse(n.fct,ignore));
       for i in n.args do
         use:=recurse(i,ignore);
@@ -1026,9 +1026,64 @@ local provides,i,r;
   for i in l do
     if i.type="A" and i.left.type="I" then
       r:=rec(name:=i.left.name,uses:=GlobalIdsIn(i.right));
-      Add(provides,r);
+      if Length(r.name)>2 then Add(provides,r);fi;
+    elif i.type="C" and IsBound(i.fct.name) and Length(i.fct.name) >7 
+      and i.fct.name{[1..7]}="Install" then
+      if IsString(i.args[1]) then
+        r:=rec(name:=i.args[1],uses:=GlobalIdsIn(i.args[Length(i.args)]));
+        if Length(r.name)>2 then Add(provides,r);fi;
+      fi;
     fi;
   od;
   return provides;
+end;
+
+PrintDependencies:=function(infiles,textfile,graph)
+local alle,i,j,l,dep,allfct,new,out,nam,orphan,ids,solo;
+  alle:=[];
+  for i in infiles do
+    Print("file ",i,"\n");
+    l:=GapParse(i);
+    Append(alle,l);
+  od;
+  dep:=FindDependencies(alle);
+  dep:=Unique(dep);
+  SortBy(dep,x->x.name);
+  PrintTo(textfile,"#created automatically from code\n");
+  for i in dep do
+    AppendTo(textfile,i.name," uses:\n");
+    for j in i.uses do 
+      AppendTo(textfile,"    ",j,"\n");
+    od;
+    AppendTo(textfile,"\n");
+  od;
+  PrintTo(graph,"digraph lattice {\n","size = \"6,6\";\n");
+
+  new:=List(dep,x->x.name);
+  allfct:=Union(List(dep,x->x.uses));
+  out:=Difference(allfct,new); # external used
+  orphan:=Difference(new,allfct); # defined, not used
+  new:=Difference(new,orphan); # defined, used
+  allfct:=Union(out,orphan,new);
+  allfct:=List(allfct,Immutable);
+  solo:=Filtered(orphan,x->First(dep,y->y.name=x).uses=[]);
+  Sort(allfct);
+  ids:=[];
+  for i in [1..Length(allfct)] do
+    ids[i]:=Concatenation("n",String(i));
+    if not allfct[i] in solo then
+      AppendTo(graph,"\"",ids[i],"\" [label=\"",allfct[i],"\"");
+      if allfct[i] in new then AppendTo(graph,", shape=plaintext");fi;
+      if allfct[i] in orphan then AppendTo(graph,", shape=oval");fi;
+      AppendTo(graph,"];\n");
+    fi;
+  od;
+  for i in dep do
+    for j in i.uses do
+      AppendTo(graph,"\"",ids[Position(allfct,i.name)],"\" -> \"",
+        ids[Position(allfct,j)],"\";\n");
+    od;
+  od;
+  AppendTo(graph,"}\n");
 end;
 
