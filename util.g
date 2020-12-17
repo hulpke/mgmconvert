@@ -73,9 +73,9 @@ DeclareGlobalFunction("MatrixByEntries");
 
 InstallGlobalFunction(MatrixByEntries,function(f,nr,nc,entries)
 local i,m,o;
+  o:=One(f);
   if ForAll(entries,x->IsList(x) and Length(x)=3) then
     m:=NullMat(nr,nc,f);
-    o:=One(f);
     for i in entries do
       m[i[1]][i[2]]:=i[3]*o;
     od;
