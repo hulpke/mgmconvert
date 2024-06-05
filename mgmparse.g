@@ -11,7 +11,7 @@ TOKENS:=["if","then","eq","cmpeq","neq","and","or","else","not","assigned",
 	 "vprint","print","printf","vprintf",
 	 "freeze","import","local","for","elif","intrinsic","to",
 	 "end for","end function","end if","end intrinsic","end while",
-	 "procedure","end procedure","where","break",
+	 "procedure","end procedure","where","break","func",
          "function","return",":=","+:=","-:=","*:=","/:=","cat:=","=",
 	 "\\[","\\]","delete","exists",
 	 "[","]","(",")","\\(","\\)","`",";","#","!","<",">","&","$","$$",":->","hom","map",
@@ -1164,8 +1164,36 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       fi;
       return a;
     end;
+    
+   # 1-line functions
+   if tok[tnum]=["K","func"] then
+      start:=tnum;
+      ExpectToken("func");
+      ExpectToken("<");
+      assg:=[];
+      a:=ReadExpression([":","|"]);
+      argus:=[];
+      if IsAtToken(":") then
+        ExpectToken(":");
+        repeat
+          b:=ReadExpression([":="]);
+          Add(argus,b.name);
+          ExpectToken(":=");
+          c:=ReadExpression([",","|"]);
+          Add(assg,rec(type:="A",left:=b,right:=c));
+          if IsAtToken(",") then
+            ExpectToken(",");
+          fi;
+        until IsAtToken("|");
+      fi;
+      ExpectToken("|");
+      c:=ReadExpression([">"]);
+      ExpectToken(">");
+      Add(assg,rec(type:="return",values:=[c]));
 
-    if tok[tnum]=["K","function"] or tok[tnum]=["K","intrinsic"] 
+      return rec(type:="F",block:=assg,args:=[a.name],locals:=argus);
+
+    elif tok[tnum]=["K","function"] or tok[tnum]=["K","intrinsic"] 
       or tok[tnum]=["K","procedure"] then
       # function
       fcomment:="";
@@ -1279,6 +1307,8 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	od;
 	ExpectToken("}");
 	fcomment:=Concatenation(fcomment,a);
+
+
       elif tok[tnum]=["O","{"] then
 	ExpectToken("{");
         #fcomment:="";
@@ -1544,7 +1574,17 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
         elif e[2]="require" then
 	  a:=ReadExpression([":"]);
 	  ExpectToken(":");
-	  c:=ReadExpression([";"]);
+          c:=ReadExpression([";",","]);
+          if IsAtToken(",") then
+            d:=[c];
+            while IsAtToken(",") do
+              ExpectToken(",");
+              c:=ReadExpression([";",","]);
+              Add(d,c);
+            od;
+            c:=rec(type:="<",args:=d);
+          fi;
+
 	  ExpectToken(";","4b");
 	  a:=rec(type:="require",cond:=a,mess:=c);
 	  Add(l,a);
@@ -1902,7 +1942,7 @@ local i,nodes,n,j;
   nodes:=[r];
   for n in nodes do
     # breadth-first test before recursing
-    for i in RecFields(n) do
+    for i in RecNames(n) do
       if cond(n.(i)) then
 	return n.(i);
       elif IsRecord(n.(i)) then
@@ -1929,7 +1969,7 @@ local new,i;
     return r.(by);
   fi;
   new:=rec();
-  for i in RecFields(r) do
+  for i in RecNames(r) do
     if r.(i)=replace then # use identical?
       new.(i):=RebuildRecTree(r.(i).(by),fail,by);
       replace:=fail; # cannot happen again -- speedup
@@ -1953,7 +1993,7 @@ local l,i;
     if IsBound(r.type) and r.type="I" then
       return [r.name];
     fi;
-    for i in RecFields(r) do
+    for i in RecNames(r) do
       l:=Union(l,VariablesInExpression(r.(i)));
     od;
   fi;
