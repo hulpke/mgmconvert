@@ -35,7 +35,7 @@ BINOPS:=["+","-","*","/","div","mod","in","notin","^","`","!","and","|",
 	 "cmpne","xor","^^","is", "non" ];
 # Magma binaries that have to become function calls in GAP
 FAKEBIN:=["meet","subset","join","diff","cat","adj","notadj",
-          "notsubset", "sdiff",];
+          "notsubset", "sdiff","notin"];
 BINOPS:=Union(BINOPS,FAKEBIN);
 
 PAROP:=["+","-","div","mod","in","notin","^","`","!","and",
@@ -2393,12 +2393,17 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
 #      fi;
       
 
+      a:=false; # surrounding parenthesis?
       # do we supress the call based on the argument?
       if IsBound(node.fct.name) and node.fct.name="Matrix" and Length(node.args)=1
         and node.args[1].type="C" and node.args[1].fct.name="SparseMatrix" then
         doit(node.args[1]);
       else
-	if IsBound(node.fct.name) then
+        if IsBound(node.fct.name) and node.fct.name="Integers"
+          and Length(node.args)>0 then
+          FilePrint(f,"(Integers mod ");
+          a:=true;
+	elif IsBound(node.fct.name) then
 	  i:=PositionSorted(tralala[1],node.fct.name);
 	  if i<>fail and IsBound(tralala[1][i]) and tralala[1][i]=node.fct.name then
 	    FilePrint(f,tralala[2][i]);
@@ -2431,6 +2436,9 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
 	else
 	  FilePrint(f,")");
 	fi;
+      fi;
+      if a then 
+        FilePrint(f,")");
       fi;
 
     elif t="L" then
@@ -2510,15 +2518,22 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
       doit(node.arg);
       FilePrint(f,")");
     elif t="B!" then
-      doit(node.right);
-      if ValueOption("carefree")<>true then
-	FilePrint(f,"*FORCEOne(");
-	doit(node.left);
-	FilePrint(f,")");
+      if IsBound(node.left.fct) and IsBound(node.left.fct.name) and
+        node.left.fct.name="Integers" and Length(node.left.args)=0 then
+        FilePrint(f,"Int(");
+        doit(node.right);
+        FilePrint(f,")");
       else
-	FilePrint(f," #CAST ");
-	doit(node.left);
-	FilePrint(f,"\n",START,"  ");
+        doit(node.right);
+        if ValueOption("carefree")<>true then
+          FilePrint(f,"*FORCEOne(");
+          doit(node.left);
+          FilePrint(f,")");
+        else
+          FilePrint(f," #CAST ");
+          doit(node.left);
+          FilePrint(f,"\n",START,"  ");
+        fi;
       fi;
     elif t="B`" then
       doit(node.left);
@@ -2547,32 +2562,47 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
       i:=t{[2..Length(t)]};
       a:=i;
       if a in FAKEBIN then
-	b:=false;
-	#if a="meet" then
-	#  a:="Intersection";
-	#elif a="join" then
-	#  a:="Union";
-	#elif a="cat" then
-	#  a:="Concatenation";
-	if a="diff" then
-	  a:="Difference";
-	elif a="subset" then
-	  a:="IsSubset";
-	  b:=true;
-	else
-	  Error("Can't do ",a,"yet\n");
-	fi;
+        if a="notin" then
+          FilePrint(f,"not (");
+          doit(node.left);
+          FilePrint(f," in ");
 
-	FilePrint(f,a,"(");
-	if b then
-	  doit(node.right);
-	  FilePrint(f,",");
-	  doit(node.left);
-	else
-	  doit(node.left);
-	  FilePrint(f,",");
-	  doit(node.right);
-	fi;
+          # avoid `Set`-ing given list
+          if node.right.type="{" then
+            # hange from `Set`.
+            node.right.type:="V";
+          fi;
+
+          doit(node.right);
+        else
+          b:=false;
+          #if a="meet" then
+          #  a:="Intersection";
+          #elif a="join" then
+          #  a:="Union";
+          #elif a="cat" then
+          #  a:="Concatenation";
+          if a="diff" then
+            a:="Difference";
+          elif a="subset" then
+            a:="IsSubset";
+            b:=true;
+          else
+            Error("Can't do ",a," yet\n");
+          fi;
+
+          FilePrint(f,a,"(");
+          if b then
+            doit(node.right);
+            FilePrint(f,",");
+            doit(node.left);
+          else
+            doit(node.left);
+            FilePrint(f,",");
+            doit(node.right);
+          fi;
+        fi;
+
 	FilePrint(f,")");
       else
 	# store the strings for both parameters to allow potential later
@@ -2586,13 +2616,7 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
 	CloseStream(f);
 	str1:=Concatenation(str1,FILEPRINTSTR);
 	FILEPRINTSTR:="";
-	str2:="";
-	f:=OutputTextString(str2,true);
-	doit(node.right);
-	CloseStream(f);
-	str2:=Concatenation(str2,FILEPRINTSTR);
-	f:=cachef;
-	FILEPRINTSTR:=cachest;
+
 
 	if i="ne" or i="cmpne" then
 	  i:="<>";
@@ -2606,6 +2630,11 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
 	  i:=" mod ";
 	elif i="in" then
 	  i:=" in ";
+          # avoid `Set`-ing given list
+          if node.right.type="{" then
+            # hange from `Set`.
+            node.right.type:="V";
+          fi;
 	elif i="gt" then
 	  i:=" > ";
 	elif i="ge" then
@@ -2615,6 +2644,15 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
 	elif i="le" then
 	  i:=" <= ";
 	fi;
+
+	str2:="";
+	f:=OutputTextString(str2,true);
+	doit(node.right);
+	CloseStream(f);
+	str2:=Concatenation(str2,FILEPRINTSTR);
+	f:=cachef;
+
+	FILEPRINTSTR:=cachest;
 	FilePrint(f,str1);
 	FilePrint(f,i);
 	FilePrint(f,str2);
