@@ -3200,13 +3200,22 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
       FilePrint(f,"fi;\n",START);
 
     elif t="select" then
-      FilePrint(f,"SELECT(");
-      doit(node.cond);
-      FilePrint(f," then ");
+      FilePrint(f,"# rewritten select statement\n",START);
+      FilePrint(f,"function(xxx)if xxx then return ");
       doit(node.yescase);
-      FilePrint(f," else ");
+      FilePrint(f,";else return ");
       doit(node.nocase);
+      FilePrint(f,";fi;end(");
+      doit(node.cond);
       FilePrint(f,")");
+
+      #FilePrint(f,"SELECT(");
+      #doit(node.cond);
+      #FilePrint(f," then ");
+      #doit(node.yescase);
+      #FilePrint(f," else ");
+      #doit(node.nocase);
+      #FilePrint(f,")");
     elif t="hom" or t="map" then
       if t="hom" then
 	t:="Homomorphism";
