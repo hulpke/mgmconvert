@@ -15,7 +15,8 @@ TOKENS:=["if","then","eq","cmpeq","neq","and","or","else","not","assigned",
          "function","return",":=","+:=","-:=","*:=","/:=","cat:=","=",
 	 "\\[","\\]","delete","exists",
 	 "[","]","(",")","\\(","\\)","`",";","#","!","<",">","&","$","$$",":->","hom","map",
-	 "cat","[*","*]","{@","@}",
+	 "cat","[*","*]","{@","@}","{*","*}",
+         "case<","func<",
 	 "continue",
 	 "->","@@","forward","join",
 	 "+","-","*","/","div","mod","in","notin","^","~","..",".",",","\"",
@@ -412,6 +413,13 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	eatblank();
 	i:=Position(TOKENS,a);
         Add(tok,["O",TOKENS[i]]);
+      elif (TOKENS[i]="case" or TOKENS[i]="func") and l[1]='<' then
+        l:=l{[2..Length(l)]};
+        eatblank();
+        a:=Concatenation(TOKENS[i],"<");
+        i:=Position(TOKENS,a);
+        Add(tok,["K",TOKENS[i]]);
+
       elif a="is" then
         Add(tok,["O",":="]);
       else
@@ -535,7 +543,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 
   # read identifier, call, function 
   ReadExpression:=function(stops)
-  local obj,e,a,b,c,argus,procidf,doprocidf,op,assg,val,pre,lbinops,
+  local obj,e,a,b,c,d,argus,procidf,doprocidf,op,assg,val,pre,lbinops,
         fcomment,stack,locopt;
 
     lbinops:=Difference(BINOPS,stops);
@@ -548,8 +556,8 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	# postfacto indexing
 	b:=ReadExpression(["]",","]);
 	if IsAtToken(",") then
-	  # array indexing -- translate to iterated index by opening a parenthesis and keeping
-	  # position
+	  # array indexing -- translate to iterated index by opening
+          # a parenthesis and keeping position
 	  tok[tnum]:=["O","["];
 	else
 	  ExpectToken("]");
@@ -616,7 +624,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	fi;
 	ExpectToken(")");
         return rec(type:="paren",arg:=a);
-      elif e in ["[","{","[*","{@","<"] then
+      elif e in ["[","{","[*","{@","<","{*"] then
 	# list tokens
 	open:=e;
 	if e="[" then
@@ -628,6 +636,9 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	elif e="[*" then
 	  close:="*]";
 	  ltype:="[*";
+	elif e="{*" then
+	  close:="*}";
+	  ltype:="{*";
 	elif e="{@" then
 	  close:="@}";
 	  ltype:="{@";
@@ -993,6 +1004,22 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 	ExpectToken(">","endhom");
 
 
+      elif e="case<" then
+        ExpectToken("case<");
+        a:=ReadExpression(["|"]);
+        ExpectToken("|");
+        d:=[];
+        repeat
+          b:=ReadExpression([":"]);
+          ExpectToken(":");
+          c:=ReadExpression([",",">"]);
+          Add(d,[b,c]);
+          if IsAtToken(",") then
+            ExpectToken(",");
+          fi;
+        until IsAtToken(">");
+        ExpectToken(">");
+        a:=rec(type:="inlinecase",var:=a,conditions:=d);
       elif not (tok[tnum][1] in ["I","N","S"] or e="$" or e="$$") then
 	tnum:=tnum+1;
 	if e in ["-","#"] then
@@ -1166,12 +1193,16 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
     end;
     
    # 1-line functions
-   if tok[tnum]=["K","func"] then
-      start:=tnum;
-      ExpectToken("func");
-      ExpectToken("<");
+   if tok[tnum]=["K","func<"] then
+      ExpectToken("func<");
       assg:=[];
-      a:=ReadExpression([":","|"]);
+      d:=[];
+      repeat
+        if IsAtToken(",") then ExpectToken(",");fi;
+        a:=ReadExpression([":","|",","]);
+        Add(d,a.name);
+      until not IsAtToken(",");
+
       argus:=[];
       if IsAtToken(":") then
         ExpectToken(":");
@@ -1191,7 +1222,7 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
       ExpectToken(">");
       Add(assg,rec(type:="return",values:=[c]));
 
-      return rec(type:="F",block:=assg,args:=[a.name],locals:=argus);
+      return rec(type:="F",block:=assg,args:=d,locals:=argus);
 
     elif tok[tnum]=["K","function"] or tok[tnum]=["K","intrinsic"] 
       or tok[tnum]=["K","procedure"] then
@@ -1840,6 +1871,11 @@ local Comment,eatblank,gimme,ReadID,ReadOP,ReadExpression,ReadBlock,
 
             Add(l,rec(type:="Print",values:=makeprintlistnice(b)));
           else
+            for a in [1..Length(b)] do
+              if b[a].name="_" then
+                b[a].name:=Concatenation("forgetvar",String(a));
+              fi;
+            od;
             a:=ReadExpression([";"]);
             Add(l,rec(type:="Amult",left:=b,right:=a));
             for a in b do
@@ -2373,9 +2409,8 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
 	  doit(node.fct);
 	fi;
 
-
 	FilePrint(f,"(");
-        if node.fct.name="Append" then 
+        if IsBound(node.fct.name) and node.fct.name="Append" then 
           printlist(node.args:NOTILDE);
         else
           printlist(node.args);
@@ -2634,7 +2669,7 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
 	printlist(node.right);
 	FilePrint(f,"])");
       fi;
-    elif t="<" then
+    elif t="<" or t="{*" then
       # seems to be not span, but just another variant of list
       FilePrint(f,"[");
       printlist(node.args);
@@ -2827,6 +2862,21 @@ local sz,i,doit,printlist,doitpar,indent,t,mulicomm,traid,declared,tralala,
 	FilePrint(f,")");
       fi;
 
+    elif t="inlinecase" then
+      FilePrint(f,"# translated case< statement\n",START);
+      FilePrint(f,"function(xxx)\n",START);
+      for i in [1..Length(node.conditions)] do
+        FilePrint(f,"  ");
+        if i>1 then FilePrint(f,"el");fi;
+        FilePrint(f,"if xxx=");
+        doit(node.conditions[i][1]);
+        FilePrint(f," then return ");
+        doit(node.conditions[i][2]);
+        FilePrint(f,";\n",START);
+      od;
+      FilePrint(f,"else Error();fi;end(");
+      doit(node.var);
+      FilePrint(f,")");
     elif t=":F" then
       # is it a List/Filtered construct ?
       str1:=node.op.type<>"I" or node.op.name<>node.var;
