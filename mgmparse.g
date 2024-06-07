@@ -3358,10 +3358,18 @@ end;
 
 
 Project:=function(dir,pkgname)
-local a,b,c,d,f,l,i,j,r,uses,defs,import,depend,order;
+local a,b,c,d,f,l,i,j,r,uses,defs,import,depend,order,subf;
   # TODO: Move into common namespace
   a:=DirectoryContents(Concatenation(dir,"/magma"));
+  subf:=Filtered(a,x->x[1]<>'.' 
+    and DirectoryContents(Concatenation(dir,"/magma/",x))<>fail);
   a:=Filtered(a,x->Length(x)>2 and x{[Length(x)-1..Length(x)]}=".m");
+  for i in subf do
+    Exec(Concatenation("mkdir ",dir,"/translate/",i));
+    r:=DirectoryContents(Concatenation(dir,"/magma/",i));
+    r:=Filtered(r,x->Length(x)>2 and x{[Length(x)-1..Length(x)]}=".m");
+    Append(a,List(r,x->Concatenation(i,"/",x)));
+  od;
   l:=[];
 
   for i in a do
