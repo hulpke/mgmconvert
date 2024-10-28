@@ -52,7 +52,7 @@ InstallGlobalFunction(Submatrix,function(m,a,b,c,d)
 end);
 
 # hom is homomorphism defined on fp group
-# l is words given by numbers 
+# l is words given by numbers
 DeclareGlobalFunction("WordlistSubgroup");
 InstallGlobalFunction(WordlistSubgroup,function(G,l,hom,arg)
 local fp,fam;
@@ -73,9 +73,9 @@ DeclareGlobalFunction("MatrixByEntries");
 
 InstallGlobalFunction(MatrixByEntries,function(f,nr,nc,entries)
 local i,m,o;
+  o:=One(f);
   if ForAll(entries,x->IsList(x) and Length(x)=3) then
     m:=NullMat(nr,nc,f);
-    o:=One(f);
     for i in entries do
       m[i[1]][i[2]]:=i[3]*o;
     od;
@@ -157,3 +157,18 @@ SOMinus:=function(d,q)
   return SO(-1,d,q);
 end;
 
+# homomorphism from free group (possibly on given generators), pre-images
+# are made as SLP elements so they will multiply by SLP rules.
+DeclareGlobalFunction("EpimorphismFromSLPGroup");
+
+InstallGlobalFunction(EpimorphismFromSLPGroup,function(arg)
+local G,epi,fgens;
+  G:=arg[1];
+  if Length(arg)>1 and arg[2]<>GeneratorsOfGroup(G) then
+    G:=SubgroupNC(G,arg[2]);
+  fi;
+  epi:=EpimorphismFromFreeGroup(G);
+  fgens:=GeneratorsOfGroup(Source(epi));
+  fgens:=StraightLineProgGens(fgens);
+  return GroupHomomorphismByImagesNC(Source(epi),G,fgens,GeneratorsOfGroup(G));
+end);
